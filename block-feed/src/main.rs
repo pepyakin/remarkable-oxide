@@ -1,11 +1,12 @@
 //! A program that processes all blocks from the start to the finalized head.
 
-use futures::{future::FutureExt, prelude::*, pin_mut, select};
+use futures::{future::FutureExt, pin_mut, prelude::*, select};
 use jsonrpsee::{
     client::Subscription,
     core::common::{to_value as to_json_value, Params},
     Client,
 };
+use serde::Deserialize;
 
 #[derive(Debug, serde::Deserialize)]
 struct Header {
@@ -24,13 +25,34 @@ async fn block_hash(client: &Client, block_number: u64) -> anyhow::Result<String
     Ok(response)
 }
 
+#[derive(Deserialize, Debug)]
+struct BlockResponse {
+    block: Block,
+}
+
+#[derive(Deserialize, Debug)]
+struct Block {
+    extrinsics: Vec<String>,
+}
+
+async fn block_body(client: &Client, hash: String) -> anyhow::Result<BlockResponse> {
+    let params = Params::Array(vec![to_json_value(hash)?]);
+    let block = client.request("chain_getBlock", params).await?;
+    Ok(block)
+}
+
+// Run polkadot instance with:
+//
+// ./polkadot-0.7.16 --wasm-execution Compiled --ws-port 1234
+//
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
     async_std::task::block_on(async move {
-        let mut raw_client = jsonrpsee::ws_raw_client("ws://localhost:1234")
-            .await
-            .unwrap();
+        // const RPC: &str = "ws://localhost:1234";
+        const RPC: &str = "wss://kusama-rpc.polkadot.io/";
+
+        let mut raw_client = jsonrpsee::ws_raw_client(RPC).await.unwrap();
         let client: Client = raw_client.into();
 
         let mut finalized: Subscription<Header> = client
@@ -57,6 +79,8 @@ fn main() -> anyhow::Result<()> {
                 hash = block_hash => {
                     if let Ok(hash) = hash {
                         println!("{}: {}", lhs, hash);
+                        let body = block_body(&client, hash).await;
+                        println!("{:#?}", body);
                         lhs += 1;
                     }
                 },
