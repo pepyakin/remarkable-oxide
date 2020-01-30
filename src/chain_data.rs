@@ -107,7 +107,6 @@ pub enum Era {
 
 impl codec::Decode for Era {
     fn decode<I: codec::Input>(input: &mut I) -> Result<Self, codec::Error> {
-        use codec::Decode;
         let first = input.read_byte()?;
         if first == 0 {
             Ok(Era::Immortal)

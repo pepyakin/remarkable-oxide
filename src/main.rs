@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::{Color, PixelFormatEnum};
-use sdl2::rect::{Point, Rect};
+use sdl2::rect::Rect;
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -39,7 +39,7 @@ fn main() -> anyhow::Result<()> {
     let mut event_pump = sdl_context.event_pump().unwrap();
 
     let (tx, rx) = mpsc::channel();
-    let handle = async_std::task::spawn(async move {
+    let _handle = async_std::task::spawn(async move {
         const RPC: &str = "ws://localhost:1234";
         // const RPC: &str = "wss://kusama-rpc.polkadot.io/";
 
