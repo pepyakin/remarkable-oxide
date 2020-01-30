@@ -66,11 +66,8 @@ pub struct CommandStream {
 }
 
 impl CommandStream {
-    pub async fn new() -> anyhow::Result<Self> {
-        const RPC: &str = "ws://localhost:1234";
-        // const RPC: &str = "wss://kusama-rpc.polkadot.io/";
-
-        let raw_client = jsonrpsee::ws_raw_client(RPC).await.unwrap();
+    pub async fn new(rpc_endpoint: &str) -> anyhow::Result<Self> {
+        let raw_client = jsonrpsee::ws_raw_client(rpc_endpoint).await.unwrap();
         let client: Client = raw_client.into();
 
         let mut finalized: Subscription<Header> = client

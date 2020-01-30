@@ -40,7 +40,10 @@ fn main() -> anyhow::Result<()> {
 
     let (tx, rx) = mpsc::channel();
     let handle = async_std::task::spawn(async move {
-        let mut stream = block_feed::CommandStream::new().await.unwrap();
+        const RPC: &str = "ws://localhost:1234";
+        // const RPC: &str = "wss://kusama-rpc.polkadot.io/";
+
+        let mut stream = block_feed::CommandStream::new(RPC).await.unwrap();
         loop {
             let commands = stream.next().await;
             if let Err(_) = tx.send(commands) {
