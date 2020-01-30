@@ -22,7 +22,9 @@ fn main() -> anyhow::Result<()> {
         .position_centered()
         .build()
         .unwrap();
-    window.set_fullscreen(sdl2::video::FullscreenType::True).map_err(|msg| anyhow!(msg))?;
+    window
+        .set_fullscreen(sdl2::video::FullscreenType::True)
+        .map_err(|msg| anyhow!(msg))?;
 
     let mut canvas = window.into_canvas().build().unwrap();
 
