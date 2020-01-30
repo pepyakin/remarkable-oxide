@@ -33,10 +33,12 @@ fn main() -> anyhow::Result<()> {
     let (tx, rx) = mpsc::channel();
     let handle = async_std::task::spawn(async move {
         let mut stream = block_feed::CommandStream::new().await.unwrap();
-        // println!("starting {}..{}", stream.lhs, stream.rhs);
         loop {
             let commands = stream.next().await;
-            tx.send(commands).unwrap();
+            if let Err(_) = tx.send(commands) {
+                // The other end hung-up. We treat it as a shutdown signal.
+                break;
+            }
         }
     });
 
