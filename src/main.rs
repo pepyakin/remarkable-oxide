@@ -17,11 +17,12 @@ fn main() -> anyhow::Result<()> {
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
 
-    let window = video_subsystem
+    let mut window = video_subsystem
         .window("rust-sdl2 demo", 1000, 1000)
         .position_centered()
         .build()
         .unwrap();
+    window.set_fullscreen(sdl2::video::FullscreenType::True).map_err(|msg| anyhow!(msg))?;
 
     let mut canvas = window.into_canvas().build().unwrap();
 
