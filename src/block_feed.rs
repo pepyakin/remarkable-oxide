@@ -1,16 +1,12 @@
-//! A program that processes all blocks from the start to the finalized head.
-#![recursion_limit = "1024"]
+//! Module for accessing the block feed.
 
+use crate::chain_data::{Call, Header, SignedBlock, UncheckedExtrinsic};
 use futures::{future::FutureExt, pin_mut, select};
 use jsonrpsee::{
     client::Subscription,
     core::common::{to_value as to_json_value, Params},
     Client,
 };
-
-mod chain_data;
-
-use chain_data::{Call, Header, SignedBlock, UncheckedExtrinsic};
 
 async fn next_finalized(finalized: &mut Subscription<Header>) -> anyhow::Result<u64> {
     let header = finalized.next().await;
@@ -139,23 +135,4 @@ impl CommandStream {
             }
         }
     }
-}
-
-// Run polkadot instance with:
-//
-// ./polkadot-0.7.16 --wasm-execution Compiled --ws-port 1234
-//
-fn main() -> anyhow::Result<()> {
-    env_logger::init();
-
-    async_std::task::block_on(async move {
-        let mut command_stream = CommandStream::new().await.unwrap();
-        println!("starting {}..{}", command_stream.lhs, command_stream.rhs);
-        loop {
-            let command = command_stream.next().await;
-            println!("{:?}", command);
-        }
-    });
-
-    Ok(())
 }

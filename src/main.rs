@@ -1,3 +1,5 @@
+#![recursion_limit = "1024"]
+
 use anyhow::anyhow;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
@@ -5,6 +7,9 @@ use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::rect::{Point, Rect};
 use std::sync::mpsc;
 use std::time::Duration;
+
+mod block_feed;
+mod chain_data;
 
 // In order to make it work on mac the following env is required
 //
