@@ -1,6 +1,7 @@
 //! Module for accessing the block feed.
 
 use crate::chain_data::{Call, Header, SignedBlock, UncheckedExtrinsic};
+use crate::command::{Chunk, Command};
 use futures::{future::FutureExt, pin_mut, select};
 use jsonrpsee::{
     client::Subscription,
@@ -26,47 +27,15 @@ async fn block_body(client: &Client, hash: String) -> anyhow::Result<SignedBlock
     Ok(block)
 }
 
-#[derive(Debug)]
-pub struct Command {
-    pub x: u16,
-    pub y: u16,
-    pub rgb: (u8, u8, u8),
-}
-
-impl Command {
-    fn parse(data: &[u8]) -> Option<Self> {
-        use std::fmt::Write;
-
-        const MAGIC: &[u8] = &[0x13, 0x37];
-        if !data.starts_with(MAGIC) {
-            return None;
-        }
-        if data.len() != 8 {
-            return None;
-        }
-
-        let mut coord_buf = String::with_capacity(6);
-        for x in &data[2..5] {
-            write!(coord_buf, "{:02x}", x).unwrap();
-        }
-        let x = coord_buf[0..3].parse::<u16>().ok()?;
-        let y = coord_buf[3..6].parse::<u16>().ok()?;
-
-        let rgb = (data[5], data[6], data[7]);
-
-        Some(Self { x, y, rgb })
-    }
-}
-
-pub struct CommandStream {
+pub struct ChunkStream {
     client: Client,
     finalized: Subscription<Header>,
     lhs: u64,
     rhs: u64,
 }
 
-impl CommandStream {
-    pub async fn new(rpc_endpoint: &str) -> anyhow::Result<Self> {
+impl ChunkStream {
+    pub async fn new(rpc_endpoint: &str, start_block_num: u64) -> anyhow::Result<Self> {
         let raw_client = jsonrpsee::ws_raw_client(rpc_endpoint).await.unwrap();
         let client: Client = raw_client.into();
 
@@ -84,12 +53,12 @@ impl CommandStream {
         Ok(Self {
             client,
             finalized,
-            lhs: 40000,
+            lhs: start_block_num,
             rhs,
         })
     }
 
-    pub async fn next(&mut self) -> Vec<Command> {
+    pub async fn next(&mut self) -> Chunk {
         loop {
             let block_hash = block_hash(&self.client, self.lhs).fuse();
             let next_finalized = next_finalized(&mut self.finalized).fuse();
@@ -100,10 +69,8 @@ impl CommandStream {
                 hash = block_hash => {
                     if let Ok(hash) = hash {
                         let body = block_body(&self.client, hash).await.unwrap();
+                        let block_num = self.lhs;
                         self.lhs += 1;
-                        if self.lhs % 1000 == 0 {
-                            println!("{}", self.lhs);
-                        }
 
                         let mut cmds = vec![];
                         for extrinsic in body.block.extrinsics {
@@ -121,7 +88,11 @@ impl CommandStream {
                                 }
                             }
                         }
-                        return cmds;
+
+                        return Chunk {
+                            block_num,
+                            cmds,
+                        };
                     }
                 },
                 finalized = next_finalized => {

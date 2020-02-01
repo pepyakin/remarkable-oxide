@@ -174,7 +174,6 @@ pub enum UncheckedExtrinsic<Call> {
 
 impl<Call: codec::Decode> codec::Decode for UncheckedExtrinsic<Call> {
     fn decode<I: codec::Input>(input: &mut I) -> Result<Self, codec::Error> {
-        use codec::Decode;
         let version = input.read_byte()?;
 
         let is_signed = version & 0b1000_0000 != 0;
