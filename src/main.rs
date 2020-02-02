@@ -106,7 +106,9 @@ fn main() -> anyhow::Result<()> {
         loop {
             match rx.try_recv() {
                 Ok(chunk) => {
-                    if chunk.cmds.is_empty() { continue; }
+                    if chunk.cmds.is_empty() {
+                        continue;
+                    }
 
                     canvas.with_texture_canvas(&mut texture, |texture_canvas| {
                         for cmd in &chunk.cmds {
@@ -124,9 +126,8 @@ fn main() -> anyhow::Result<()> {
 
         canvas.set_draw_color(Color::RGB(0, 0, 0));
         canvas.clear();
-        let dst = Some(Rect::new(0, 0, 1000, 1000));
         canvas
-            .copy_ex(&texture, None, dst, 0.0, None, false, false)
+            .copy(&texture, None, None)
             .map_err(|msg| anyhow!(msg))?;
         canvas.present();
 
