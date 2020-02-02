@@ -60,7 +60,7 @@ impl Persister {
         }
 
         for cmd in &chunk.cmds {
-            let idx = cmd.y as usize * CANVAS_WIDTH + cmd.x as usize * 3;
+            let idx = (cmd.y as usize * CANVAS_WIDTH + cmd.x as usize) * 3;
             self.file.seek(SeekFrom::Start(8u64 + idx as u64)).await?;
 
             let rgb_buf = [cmd.rgb.0, cmd.rgb.1, cmd.rgb.2];
