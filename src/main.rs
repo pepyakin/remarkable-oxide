@@ -49,16 +49,17 @@ fn main() -> anyhow::Result<()> {
     // Create the texture to draw the contents of the remarkable image.
     //
     // Initialize it with the persisted data.
-    let initial_surface = Surface::from_data(
-        &mut persisted_data.image_data[..],
+    let creator = canvas.texture_creator();
+    let mut texture = creator.create_texture_streaming(
+        PixelFormatEnum::RGB24,
         command::CANVAS_WIDTH as u32,
         command::CANVAS_HEIGHT as u32,
-        3 * command::CANVAS_WIDTH as u32,
-        PixelFormatEnum::RGB24,
-    )
-    .map_err(|msg| anyhow!(msg))?;
-    let creator = canvas.texture_creator();
-    let mut texture = creator.create_texture_from_surface(initial_surface)?;
+    )?;
+    texture.update(
+        None,
+        &persisted_data.image_data[..],
+        3 * command::CANVAS_WIDTH,
+    )?;
 
     // Start the block feed.
     let start_block_num = persisted_data.block_num;
@@ -74,6 +75,9 @@ fn main() -> anyhow::Result<()> {
             let chunk = stream.next().await;
             if chunk.block_num % 1000 == 0 {
                 info!("current block: {}", chunk.block_num);
+            }
+            if !chunk.cmds.is_empty() {
+                info!("{} has {} cmds", chunk.block_num, chunk.cmds.len());
             }
             persister.apply(&chunk).await;
             if let Err(_) = tx.send(chunk) {
@@ -110,14 +114,13 @@ fn main() -> anyhow::Result<()> {
                         continue;
                     }
 
-                    canvas.with_texture_canvas(&mut texture, |texture_canvas| {
-                        for cmd in &chunk.cmds {
-                            texture_canvas.set_draw_color(Color::from(cmd.rgb));
-                            texture_canvas
-                                .draw_point((cmd.x as i32, cmd.y as i32))
-                                .unwrap();
-                        }
-                    })?;
+                    for cmd in &chunk.cmds {
+                        texture.update(
+                            Rect::new(cmd.x as i32, cmd.y as i32, 1, 1),
+                            &[cmd.rgb.0, cmd.rgb.1, cmd.rgb.2],
+                            3000,
+                        )?;
+                    }
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => break 'running,
