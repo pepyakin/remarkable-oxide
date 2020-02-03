@@ -54,7 +54,7 @@ fn main() -> anyhow::Result<()> {
         command::CANVAS_WIDTH as u32,
         command::CANVAS_HEIGHT as u32,
         3 * command::CANVAS_WIDTH as u32,
-        PixelFormatEnum::RGB888,
+        PixelFormatEnum::RGB24,
     )
     .map_err(|msg| anyhow!(msg))?;
     let creator = canvas.texture_creator();
