@@ -1,3 +1,4 @@
 /target
+/.env
 **/*.rs.bk
 persisted_data

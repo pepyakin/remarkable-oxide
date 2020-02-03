@@ -7,6 +7,7 @@ use sdl2::keyboard::Keycode;
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::rect::Rect;
 use sdl2::surface::Surface;
+use std::env;
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -15,15 +16,15 @@ mod chain_data;
 mod command;
 mod persist;
 
-// In order to make it work on mac the following env is required
-//
-//    export LIBRARY_PATH="$LIBRARY_PATH:/usr/local/lib"
-//
-
 const PERSISTED_DATA_FILENAME: &str = "persisted_data";
+
+fn rpc_hostname() -> String {
+    env::var("RPC_HOST").unwrap_or_else(|_| "ws://localhost:1234".to_string())
+}
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
+    let _ = dotenv::dotenv();
 
     let (mut persisted_data, mut persister) = persist::init(PERSISTED_DATA_FILENAME)?;
 
@@ -65,10 +66,7 @@ fn main() -> anyhow::Result<()> {
     let start_block_num = persisted_data.block_num;
     let (tx, rx) = mpsc::channel();
     let _handle = async_std::task::spawn(async move {
-        const RPC: &str = "ws://localhost:1234";
-        // const RPC: &str = "wss://kusama-rpc.polkadot.io/";
-
-        let mut stream = block_feed::ChunkStream::new(RPC, start_block_num)
+        let mut stream = block_feed::ChunkStream::new(&rpc_hostname(), start_block_num)
             .await
             .unwrap();
         loop {
