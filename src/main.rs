@@ -22,6 +22,19 @@ fn rpc_hostname() -> String {
     env::var("RPC_HOST").unwrap_or_else(|_| "ws://localhost:1234".to_string())
 }
 
+fn go_fullscreen() -> bool {
+    let mut fullscreen_var = match env::var("FULLSCREEN") {
+        Ok(fullscreen_var) => fullscreen_var,
+        Err(_) => return true,
+    };
+    fullscreen_var.make_ascii_lowercase();
+
+    match &*fullscreen_var {
+        "0" | "false" | "no" | "n" => false,
+        _ => true,
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     env_logger::init();
     let _ = dotenv::dotenv();
@@ -36,9 +49,12 @@ fn main() -> anyhow::Result<()> {
         .position_centered()
         .build()
         .unwrap();
-    // window
-    //     .set_fullscreen(sdl2::video::FullscreenType::True)
-    //     .map_err(|msg| anyhow!(msg))?;
+
+    if go_fullscreen() {
+        window
+            .set_fullscreen(sdl2::video::FullscreenType::True)
+            .map_err(|msg| anyhow!(msg))?;
+    }
 
     let mut canvas = window.into_canvas().build().unwrap();
 
