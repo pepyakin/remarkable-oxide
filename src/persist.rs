@@ -1,4 +1,14 @@
 //! A module that is responsible for storing and restoring the progress.
+//!
+//! The file format is very simple, it is represented as follows:
+//!
+//! | offset | size    | description
+//! | 0      | 8       | the latest block number that was scanned.
+//! | 8      | 3000000 | canvas 1000 x 1000 of RGB pixels. Each color component is represented by
+//! |        |         | 8 bit, so a pixel is represented by 3 bytes.
+//!
+//! This format is a bit wasteful, it consumes 3Mb disk space. But it should be fine. The good news
+//! is the pixels can be updated as a simple write operation.
 
 use crate::command::{Chunk, CANVAS_HEIGHT, CANVAS_WIDTH};
 use anyhow::Result;
