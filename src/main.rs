@@ -7,39 +7,20 @@ use sdl2::keyboard::Keycode;
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::rect::Rect;
 use sdl2::surface::Surface;
-use std::env;
 use std::sync::mpsc;
 use std::time::Duration;
 
 mod block_feed;
 mod chain_data;
 mod command;
+mod config;
 mod persist;
-
-const PERSISTED_DATA_FILENAME: &str = "persisted_data";
-
-fn rpc_hostname() -> String {
-    env::var("RPC_HOST").unwrap_or_else(|_| "ws://localhost:1234".to_string())
-}
-
-fn go_fullscreen() -> bool {
-    let mut fullscreen_var = match env::var("FULLSCREEN") {
-        Ok(fullscreen_var) => fullscreen_var,
-        Err(_) => return true,
-    };
-    fullscreen_var.make_ascii_lowercase();
-
-    match &*fullscreen_var {
-        "0" | "false" | "no" | "n" => false,
-        _ => true,
-    }
-}
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
-    let _ = dotenv::dotenv();
+    let config = config::obtain();
 
-    let (mut persisted_data, mut persister) = persist::init(PERSISTED_DATA_FILENAME)?;
+    let (mut persisted_data, mut persister) = persist::init(&config.persisted_data_path)?;
 
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
@@ -50,7 +31,7 @@ fn main() -> anyhow::Result<()> {
         .build()
         .unwrap();
 
-    if go_fullscreen() {
+    if config.fullscreen {
         window
             .set_fullscreen(sdl2::video::FullscreenType::True)
             .map_err(|msg| anyhow!(msg))?;
@@ -82,7 +63,7 @@ fn main() -> anyhow::Result<()> {
     let start_block_num = persisted_data.block_num;
     let (tx, rx) = mpsc::channel();
     let _handle = async_std::task::spawn(async move {
-        let mut stream = block_feed::ChunkStream::new(&rpc_hostname(), start_block_num)
+        let mut stream = block_feed::ChunkStream::new(&config.rpc_hostname, start_block_num)
             .await
             .unwrap();
         loop {
