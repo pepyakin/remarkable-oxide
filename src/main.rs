@@ -35,6 +35,10 @@ fn main() -> anyhow::Result<()> {
             .set_fullscreen(sdl2::video::FullscreenType::True)
             .map_err(|msg| anyhow!(msg))?;
     }
+    if config.hide_cursor {
+        // Hide the cursor
+        sdl_context.mouse().show_cursor(false);
+    }
 
     let mut canvas = window.into_canvas().build().unwrap();
 
