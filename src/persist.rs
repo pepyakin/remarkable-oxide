@@ -1,7 +1,7 @@
 //! A module that is responsible for storing and restoring the progress.
 
 use crate::command::{Chunk, CANVAS_HEIGHT, CANVAS_WIDTH};
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use async_std::fs::{File, OpenOptions};
 use async_std::io::{prelude::*, SeekFrom};
 use async_std::path::Path;

@@ -6,7 +6,6 @@ use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::rect::Rect;
-use sdl2::surface::Surface;
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -20,7 +19,7 @@ fn main() -> anyhow::Result<()> {
     env_logger::init();
     let config = config::obtain();
 
-    let (mut persisted_data, mut persister) = persist::init(&config.persisted_data_path)?;
+    let (persisted_data, mut persister) = persist::init(&config.persisted_data_path)?;
 
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
@@ -74,7 +73,9 @@ fn main() -> anyhow::Result<()> {
             if !chunk.cmds.is_empty() {
                 info!("{} has {} cmds", chunk.block_num, chunk.cmds.len());
             }
-            persister.apply(&chunk).await;
+            if let Err(err) = persister.apply(&chunk).await {
+                warn!("Failed to persist {}", err);
+            }
             if let Err(_) = tx.send(chunk) {
                 // The other end hung-up. We treat it as a shutdown signal.
                 break;
