@@ -36,7 +36,7 @@ pub struct ChunkStream {
 
 impl ChunkStream {
     pub async fn new(rpc_endpoint: &str, start_block_num: u64) -> anyhow::Result<Self> {
-        let raw_client = jsonrpsee::ws_raw_client(rpc_endpoint).await.unwrap();
+        let raw_client = jsonrpsee::ws_raw_client(rpc_endpoint).await?;
         let client: Client = raw_client.into();
 
         let mut finalized: Subscription<Header> = client
@@ -45,10 +45,9 @@ impl ChunkStream {
                 jsonrpsee::core::common::Params::None,
                 "chain_unsubscribeNewHeads",
             )
-            .await
-            .unwrap();
+            .await?;
 
-        let rhs = next_finalized(&mut finalized).await.unwrap();
+        let rhs = next_finalized(&mut finalized).await?;
 
         Ok(Self {
             client,

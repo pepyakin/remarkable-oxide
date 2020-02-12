@@ -1,6 +1,7 @@
 #![recursion_limit = "1024"]
 
 use anyhow::anyhow;
+use futures::{future::FutureExt, pin_mut, select};
 use log::{debug, info, warn};
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
@@ -66,23 +67,41 @@ fn main() -> anyhow::Result<()> {
     let start_block_num = persisted_data.block_num;
     let (tx, rx) = mpsc::channel();
     let _handle = async_std::task::spawn(async move {
-        let mut stream = block_feed::ChunkStream::new(&config.rpc_hostname, start_block_num)
-            .await
-            .unwrap();
-        loop {
-            let chunk = stream.next().await;
-            if chunk.block_num % 1000 == 0 {
-                info!("current block: {}", chunk.block_num);
-            }
-            if !chunk.cmds.is_empty() {
-                info!("{} has {} cmds", chunk.block_num, chunk.cmds.len());
-            }
-            if let Err(err) = persister.apply(&chunk).await {
-                warn!("Failed to persist {}", err);
-            }
-            if let Err(_) = tx.send(chunk) {
-                // The other end hung-up. We treat it as a shutdown signal.
-                break;
+        'toplevel: loop {
+            let mut stream =
+                match block_feed::ChunkStream::new(&config.rpc_hostname, start_block_num).await {
+                    Ok(stream) => stream,
+                    Err(err) => {
+                        warn!("connection error: {}. Retrying...", err);
+                        async_std::task::sleep(std::time::Duration::from_secs(5)).await;
+                        continue;
+                    }
+                };
+            loop {
+                let chunk = stream.next().fuse();
+                let timeout = async_std::task::sleep(std::time::Duration::from_secs(5)).fuse();
+                pin_mut!(chunk, timeout);
+                select! {
+                    chunk = chunk => {
+                        if chunk.block_num % 1000 == 0 {
+                            info!("current block: {}", chunk.block_num);
+                        }
+                        if !chunk.cmds.is_empty() {
+                            info!("{} has {} cmds", chunk.block_num, chunk.cmds.len());
+                        }
+                        if let Err(err) = persister.apply(&chunk).await {
+                            warn!("Failed to persist {}", err);
+                        }
+                        if let Err(_) = tx.send(chunk) {
+                            // The other end hung-up. We treat it as a shutdown signal.
+                            break 'toplevel;
+                        }
+                    }
+                    timeout = timeout => {
+                        warn!("timeout getting chunks. Reconnecting...");
+                        continue 'toplevel;
+                    }
+                }
             }
         }
 
