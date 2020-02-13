@@ -16,10 +16,22 @@ mod command;
 mod config;
 mod persist;
 
-fn main() -> anyhow::Result<()> {
-    env_logger::init();
-    let config = config::obtain();
+fn init_logger() {
+    let mut builder = env_logger::Builder::new();
+    // jsonrpsee is very vocal on connection errors.
+    builder.filter(Some("jsonrpsee::client"), log::LevelFilter::Off);
+    if let Ok(lvl) = std::env::var("RUST_LOG") {
+        builder.parse_filters(&lvl);
+    }
+    if builder.try_init().is_err() {
+		eprintln!("Failed to register logger. Logging is turned off.");
+    }
+}
 
+fn main() -> anyhow::Result<()> {
+    init_logger();
+
+    let config = config::obtain();
     let (persisted_data, mut persister) = persist::init(&config.persisted_data_path)?;
 
     let sdl_context = sdl2::init().unwrap();
