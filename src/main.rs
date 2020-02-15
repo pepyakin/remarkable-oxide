@@ -68,8 +68,11 @@ fn main() -> anyhow::Result<()> {
         command::CANVAS_HEIGHT as u32,
     )?;
 
+    // Stride is defined as a number of bytes per row.
+    const STRIDE: usize = 3 * command::CANVAS_WIDTH;
+
     let image_data = service.image_data()?;
-    texture.update(None, &image_data, 3 * command::CANVAS_WIDTH)?;
+    texture.update(None, &image_data, STRIDE)?;
 
     'running: loop {
         for event in event_pump.poll_iter() {
@@ -87,7 +90,7 @@ fn main() -> anyhow::Result<()> {
             texture.update(
                 Rect::new(cmd.x as i32, cmd.y as i32, 1, 1),
                 &[cmd.rgb.0, cmd.rgb.1, cmd.rgb.2],
-                3000,
+                STRIDE,
             )?;
         }
 
