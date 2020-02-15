@@ -41,9 +41,9 @@ impl ChunkStream {
 
         let finalized: Subscription<Header> = client
             .subscribe(
-                "chain_subscribeNewHeads",
+                "chain_subscribeFinalizedHeads",
                 jsonrpsee::core::common::Params::None,
-                "chain_unsubscribeNewHeads",
+                "chain_unsubscribeFinalizedHeads",
             )
             .await?;
 
