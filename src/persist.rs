@@ -15,7 +15,7 @@ use anyhow::Result;
 use async_std::fs::{File, OpenOptions};
 use async_std::io::{prelude::*, SeekFrom};
 use async_std::path::Path;
-use log::info;
+use async_std::sync::{Arc, RwLock};
 
 struct FileOps<'a>(&'a mut File);
 impl<'a> FileOps<'a> {
@@ -34,81 +34,73 @@ impl<'a> FileOps<'a> {
     }
 }
 
-pub struct PersistedData {
-    pub block_num: u64,
-    pub image_data: Vec<u8>,
-}
-
-impl PersistedData {
-    async fn read(file: &mut File) -> Result<Self> {
-        let mut ops = FileOps(file);
-        Ok(Self {
-            block_num: ops.read_block_num().await?,
-            image_data: ops.read_image_data().await?,
-        })
-    }
-
-    fn empty() -> Self {
-        Self {
-            block_num: 0,
-            image_data: vec![0; 3 * CANVAS_WIDTH * CANVAS_HEIGHT],
-        }
-    }
-}
-
-pub struct Persister {
+struct Inner {
     file: File,
+}
+
+#[derive(Clone)]
+pub struct Persister {
+    inner: Arc<RwLock<Inner>>,
 }
 
 impl Persister {
     /// Asynchronously apply a sequence of commands and potentially flush the changes to the disk.
     pub async fn apply(&mut self, chunk: &Chunk) -> Result<()> {
-        self.file.seek(SeekFrom::Start(0u64)).await?;
+        let mut inner = self.inner.write().await;
+
+        inner.file.seek(SeekFrom::Start(0u64)).await?;
         {
             let block_num_buf = chunk.block_num.to_le_bytes();
-            self.file.write_all(&block_num_buf[..]).await?;
+            inner.file.write_all(&block_num_buf[..]).await?;
         }
 
         for cmd in &chunk.cmds {
             let idx = (cmd.y as usize * CANVAS_WIDTH + cmd.x as usize) * 3;
-            self.file.seek(SeekFrom::Start(8u64 + idx as u64)).await?;
+            inner.file.seek(SeekFrom::Start(8u64 + idx as u64)).await?;
 
             let rgb_buf = [cmd.rgb.0, cmd.rgb.1, cmd.rgb.2];
-            self.file.write_all(&rgb_buf[..]).await?;
+            inner.file.write_all(&rgb_buf[..]).await?;
         }
 
-        self.file.flush().await?;
+        inner.file.flush().await?;
 
         Ok(())
     }
 
+    /// Returns the last persisted block number.
+    pub async fn block_num(&mut self) -> Result<u64> {
+        let mut inner = self.inner.write().await;
+        FileOps(&mut inner.file).read_block_num().await
+    }
+
+    /// Returns the persisted image data.
+    pub async fn image_data(&mut self) -> Result<Vec<u8>> {
+        let mut inner = self.inner.write().await;
+        FileOps(&mut inner.file).read_image_data().await
+    }
+
     /// Shuts down the persister and awaits until all pending commands are stored.
     pub async fn shutdown(self) -> Result<()> {
-        Ok(self.file.sync_all().await?)
+        let inner = self.inner.read().await;
+        Ok(inner.file.sync_all().await?)
     }
 }
 
-pub fn init(path: impl AsRef<Path>) -> Result<(PersistedData, Persister)> {
-    async_std::task::block_on(async {
-        let mut file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(path)
-            .await?;
+pub async fn start(path: impl AsRef<Path>) -> Result<Persister> {
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(path)
+        .await?;
 
-        let data = match PersistedData::read(&mut file).await {
-            Ok(data) => data,
-            Err(e) => {
-                info!("Cannot load persisted data: {}. Initializing new one", e);
-                let new_len = 8 + 3 * CANVAS_WIDTH * CANVAS_HEIGHT;
-                file.set_len(new_len as u64).await?;
-                PersistedData::empty()
-            }
-        };
+    // Unconditionally set length of the file. It won't harm if the file is already initialized
+    // and it necessary if it is not.
+    let new_len = 8 + 3 * CANVAS_WIDTH * CANVAS_HEIGHT;
+    file.set_len(new_len as u64).await?;
 
-        let persister = Persister { file };
-
-        Ok((data, persister))
-    })
+    let persister = Persister {
+        inner: Arc::new(RwLock::new(Inner { file })),
+    };
+    Ok(persister)
 }

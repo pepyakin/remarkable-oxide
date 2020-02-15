@@ -1,5 +1,6 @@
 use std::env;
 
+#[derive(Clone)]
 pub struct Config {
     /// The path where to store the data to persist. See persist.rs
     pub persisted_data_path: String,
