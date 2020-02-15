@@ -7,10 +7,10 @@ use crate::persist;
 use anyhow::Result;
 use async_std::task;
 use futures::{future::FutureExt, pin_mut, select};
-use log::{debug, info, warn, error};
+use log::{debug, error, info, warn};
+use std::collections::VecDeque;
 use std::sync::mpsc;
 use std::time::Duration;
-use std::collections::VecDeque;
 
 pub enum State {
     Connecting,
@@ -36,7 +36,7 @@ impl Service {
         }
         match self.rx.try_recv() {
             Ok(chunk) => self.pending.extend(chunk.cmds),
-            Err(mpsc::TryRecvError::Empty) => {},
+            Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => error!("the worker end hang up unexpectedly"),
         }
         self.pending.pop_back()
@@ -69,11 +69,28 @@ pub fn start(config: Config) -> Result<Service> {
                         }
                     };
                 loop {
-                    let chunk = stream.next().fuse();
+                    let item = stream.poll().fuse();
                     let timeout = task::sleep(Duration::from_secs(5)).fuse();
-                    pin_mut!(chunk, timeout);
+                    pin_mut!(item, timeout);
                     select! {
-                        chunk = chunk => {
+                        item = item => {
+                            let chunk = match item {
+                                block_feed::PollResult::Chunk(chunk) => chunk,
+                                block_feed::PollResult::NewFinalized(new_finalized) => {
+                                    info!("new finalized {}", new_finalized);
+                                    continue;
+                                }
+                                block_feed::PollResult::Error(err) => {
+                                    warn!("error: {}", err);
+                                    continue;
+                                }
+                                block_feed::PollResult::Idle => {
+                                    info!("idle");
+                                    task::sleep(Duration::from_secs(1)).await;
+                                    continue;
+                                }
+                            };
+
                             if chunk.block_num % 1000 == 0 {
                                 info!("current block: {}", chunk.block_num);
                             }
