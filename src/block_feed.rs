@@ -39,7 +39,7 @@ impl ChunkStream {
         let raw_client = jsonrpsee::ws_raw_client(rpc_endpoint).await?;
         let client: Client = raw_client.into();
 
-        let mut finalized: Subscription<Header> = client
+        let finalized: Subscription<Header> = client
             .subscribe(
                 "chain_subscribeNewHeads",
                 jsonrpsee::core::common::Params::None,
@@ -47,13 +47,11 @@ impl ChunkStream {
             )
             .await?;
 
-        let rhs = next_finalized(&mut finalized).await?;
-
         Ok(Self {
             client,
             finalized,
             lhs: start_block_num,
-            rhs,
+            rhs: start_block_num,
         })
     }
 
@@ -76,7 +74,7 @@ impl ChunkStream {
                             use codec::Decode;
                             match <UncheckedExtrinsic<Call>>::decode(&mut &extrinsic.0[..]) {
                                 Ok(extrinsic) => {
-                                    if let UncheckedExtrinsic::V4 { call: Call::SystemRemark(remark), .. } =  extrinsic {
+                                    if let UncheckedExtrinsic::V4 { call: Call::SystemRemark(remark), .. } = extrinsic {
                                         if let Some(command) = Command::parse(&remark) {
                                             cmds.push(command);
                                         }
