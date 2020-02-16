@@ -80,7 +80,7 @@ impl Persister {
     }
 
     /// Shuts down the persister and awaits until all pending commands are stored.
-    pub async fn shutdown(self) -> Result<()> {
+    pub async fn shutdown(&self) -> Result<()> {
         let inner = self.inner.read().await;
         Ok(inner.file.sync_all().await?)
     }
