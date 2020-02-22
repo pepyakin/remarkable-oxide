@@ -6,11 +6,17 @@ use crate::config::Config;
 use crate::persist;
 use anyhow::Result;
 use async_std::task;
+use futures::prelude::*;
 use futures::{future::FutureExt, pin_mut, select};
 use log::{debug, error, info, warn};
 use std::collections::VecDeque;
 use std::sync::mpsc;
 use std::time::Duration;
+
+mod block;
+mod comm;
+mod hash_query;
+mod latest;
 
 pub enum State {
     Connecting,
@@ -27,7 +33,7 @@ pub struct Service {
 
 impl Service {
     pub fn state(&self) -> State {
-        todo!()
+        State::Syncing
     }
 
     pub fn poll(&mut self) -> Option<Command> {
@@ -52,64 +58,42 @@ impl Service {
 
 pub fn start(config: Config) -> Result<Service> {
     let (tx, rx) = mpsc::channel();
-    let persister = task::block_on(async { persist::start(&config.persisted_data_path).await })?;
+    let (persister, start_block_num) = task::block_on(async {
+        let mut persister = persist::start(&config.persisted_data_path).await?;
+        let start_block_num = persister.block_num().await?;
+        Ok::<_, anyhow::Error>((persister, start_block_num))
+    })?;
     let worker_handle = task::spawn({
         let mut persister = persister.clone();
         async move {
-            'toplevel: loop {
-                let start_block_num = persister.block_num().await.unwrap();
-                let mut stream =
-                    match block_feed::ChunkStream::new(&config.rpc_hostname, start_block_num).await
-                    {
-                        Ok(stream) => stream,
-                        Err(err) => {
-                            warn!("connection error: {}. Retrying...", err);
-                            task::sleep(Duration::from_secs(5)).await;
-                            continue;
-                        }
-                    };
-                loop {
-                    let item = stream.poll().fuse();
-                    let timeout = task::sleep(Duration::from_secs(5)).fuse();
-                    pin_mut!(item, timeout);
-                    select! {
-                        item = item => {
-                            let chunk = match item {
-                                block_feed::PollResult::Chunk(chunk) => chunk,
-                                block_feed::PollResult::NewFinalized(new_finalized) => {
-                                    info!("new finalized {}", new_finalized);
-                                    continue;
-                                }
-                                block_feed::PollResult::Error(err) => {
-                                    warn!("error: {}", err);
-                                    continue;
-                                }
-                                block_feed::PollResult::Idle => {
-                                    info!("idle");
-                                    task::sleep(Duration::from_secs(1)).await;
-                                    continue;
-                                }
-                            };
+            let comm = comm::RpcComm::new(&config.rpc_hostname);
 
-                            if chunk.block_num % 1000 == 0 {
-                                info!("current block: {}", chunk.block_num);
-                            }
-                            if !chunk.cmds.is_empty() {
-                                info!("{} has {} cmds", chunk.block_num, chunk.cmds.len());
-                            }
-                            if let Err(err) = persister.apply(&chunk).await {
-                                warn!("Failed to persist {}", err);
-                            }
-                            if let Err(_) = tx.send(chunk) {
-                                // The other end hung-up. We treat it as a shutdown signal.
-                                break 'toplevel;
-                            }
-                        }
-                        timeout = timeout => {
-                            warn!("timeout getting chunks. Reconnecting...");
-                            continue 'toplevel;
-                        }
-                    }
+            // TODO: Wire the writer to the latest height block.
+            let (_writer, reader) = latest::latest();
+            let mut stream = hash_query::stream(start_block_num, reader, &comm)
+                .map({
+                    let comm = &comm;
+                    move |block_hash| async move { comm.block_body(block_hash) }
+                })
+                .buffered(10)
+                .map(|block| async move { block::parse_block(block.await) });
+
+            pin_mut!(stream);
+
+            loop {
+                let chunk = stream.next().await.unwrap().await;
+                if chunk.block_num % 1000 == 0 {
+                    info!("current block: {}", chunk.block_num);
+                }
+                if !chunk.cmds.is_empty() {
+                    info!("{} has {} cmds", chunk.block_num, chunk.cmds.len());
+                }
+                if let Err(err) = persister.apply(&chunk).await {
+                    warn!("Failed to persist {}", err);
+                }
+                if let Err(_) = tx.send(chunk) {
+                    // The other end hung-up. We treat it as a shutdown signal.
+                    return;
                 }
             }
 
