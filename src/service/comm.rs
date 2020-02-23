@@ -9,7 +9,7 @@ use async_std::task;
 use futures::channel::{mpsc, oneshot};
 use futures::prelude::*;
 use futures::stream::{self, futures_unordered::FuturesUnordered, Stream};
-use futures::{future::FutureExt, pin_mut, select};
+use futures::{future::FutureExt, pin_mut};
 use jsonrpsee::{
     client::Subscription,
     core::common::{to_value as to_json_value, Params},

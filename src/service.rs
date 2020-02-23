@@ -1,17 +1,15 @@
 //! High-level logic that orchestrates loading and processing the blocks.
 
-use crate::block_feed;
 use crate::command::{Chunk, Command};
 use crate::config::Config;
 use crate::persist;
 use anyhow::Result;
 use async_std::task;
 use futures::prelude::*;
-use futures::{future::FutureExt, pin_mut, select};
+use futures::{future::FutureExt, pin_mut};
 use log::{debug, error, info, warn};
 use std::collections::VecDeque;
 use std::sync::mpsc;
-use std::time::Duration;
 
 mod block;
 mod comm;
@@ -70,7 +68,7 @@ pub fn start(config: Config) -> Result<Service> {
 
             // TODO: Wire the writer to the latest height block.
             let (_writer, reader) = latest::latest();
-            let mut stream = hash_query::stream(start_block_num, reader, &comm)
+            let stream = hash_query::stream(start_block_num, reader, &comm)
                 .map({
                     let comm = &comm;
                     move |block_hash| async move { comm.block_body(block_hash) }

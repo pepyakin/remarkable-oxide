@@ -4,7 +4,7 @@
 use super::comm::RpcComm;
 use super::latest;
 use async_std::task;
-use futures::channel::{mpsc, oneshot};
+
 use futures::prelude::*;
 use futures::stream::{self, Stream};
 use std::time::Duration;
