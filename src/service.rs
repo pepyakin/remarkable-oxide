@@ -66,20 +66,28 @@ pub fn start(config: Config) -> Result<Service> {
         async move {
             let comm = comm::RpcComm::new(&config.rpc_hostname);
 
-            // TODO: Wire the writer to the latest height block.
-            let (_writer, reader) = latest::latest();
-            let stream = hash_query::stream(start_block_num, reader, &comm)
+            let finalized_height = comm
+                .finalized_height()
+                .await
+                .inspect(|fin_num| info!("finalization advanced to {}", fin_num));
+            let stream = hash_query::stream(start_block_num, finalized_height, &comm)
                 .map({
                     let comm = &comm;
-                    move |block_hash| async move { comm.block_body(block_hash) }
+                    move |(block_num, block_hash)| {
+                        // dbg!();
+                        async move {
+                            let block = comm.block_body(block_hash).await;
+                            let cmds = block::parse_block(block);
+                            Chunk { cmds, block_num }
+                        }
+                    }
                 })
-                .buffered(10)
-                .map(|block| async move { block::parse_block(block.await) });
+                .buffered(3);
 
             pin_mut!(stream);
 
             loop {
-                let chunk = stream.next().await.unwrap().await;
+                let chunk = stream.next().await.unwrap();
                 if chunk.block_num % 1000 == 0 {
                     info!("current block: {}", chunk.block_num);
                 }
@@ -91,6 +99,7 @@ pub fn start(config: Config) -> Result<Service> {
                 }
                 if let Err(_) = tx.send(chunk) {
                     // The other end hung-up. We treat it as a shutdown signal.
+                    // dbg!();
                     return;
                 }
             }

@@ -1,7 +1,7 @@
 use crate::chain_data::{Call, SignedBlock, UncheckedExtrinsic};
 use crate::command::{Chunk, Command};
 
-pub fn parse_block(body: SignedBlock) -> Chunk {
+pub fn parse_block(body: SignedBlock) -> Vec<Command> {
     let mut cmds = vec![];
     for extrinsic in body.block.extrinsics {
         use codec::Decode;
@@ -22,8 +22,5 @@ pub fn parse_block(body: SignedBlock) -> Chunk {
             }
         }
     }
-    Chunk {
-        block_num: 0, // TODO: Parse the real block number
-        cmds,
-    }
+    cmds
 }
