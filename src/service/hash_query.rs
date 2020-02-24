@@ -30,8 +30,8 @@ pub fn stream<'a>(
                 log::debug!("unfold, cur {} fin {}", state.cur, state.finalized);
                 let cur = state.cur;
                 if state.cur >= state.finalized {
-                    log::debug!("waiting for the next finalized");
                     // All the blocks emitted, next wait for a the new height block.
+                    log::debug!("waiting for the next finalized");
                     state.finalized = state.new_height_finalized_block_num.next().await.unwrap();
                 }
                 // dbg!();

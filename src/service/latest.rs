@@ -47,13 +47,14 @@ pub struct Reader<T> {
 impl<T> Reader<T> {
     pub async fn next(&mut self) -> T {
         loop {
-            // dbg!();
-            // This unwrap cannot panic since self holds on to the arc that contains the tx.
-            let v = self.rx.next().fuse().await.unwrap();
-            // dbg!(v);
-
+            let v = self.rx.next().await.unwrap();
             let mut inner = self.inner.lock().await;
 
+            // One might think that (1) if we received the signal from the writer and (2) since
+            // there are only one reader and one writer then the inner value must be `Some`.
+            //
+            // Apparently, we can end up in a situation when we receive a notification and the value
+            // is `None`...
             if let Some(value) = inner.value.take() {
                 return value;
             }
