@@ -70,6 +70,7 @@ pub fn start(config: Config) -> Result<Service> {
                 .finalized_height()
                 .await
                 .inspect(|fin_num| info!("finalization advanced to {}", fin_num));
+            pin_mut!(finalized_height);
             let stream = hash_query::stream(start_block_num, finalized_height, &comm)
                 .map({
                     let comm = &comm;
