@@ -64,7 +64,7 @@ pub fn start(config: Config) -> Result<Service> {
     let worker_handle = task::spawn({
         let mut persister = persister.clone();
         async move {
-            let comm = comm::RpcComm::new(&config.rpc_hostname);
+            let comm = comm::RpcComm::start(&config.rpc_hostname);
 
             let finalized_height = comm
                 .finalized_height()

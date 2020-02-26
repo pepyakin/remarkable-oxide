@@ -48,7 +48,7 @@ pub struct RpcComm {
 }
 
 impl RpcComm {
-    pub fn new(rpc_endpoint: &str) -> Self {
+    pub fn start(rpc_endpoint: &str) -> Self {
         let (to_back_tx, to_back_rx) = mpsc::channel(16);
 
         let rpc_endpoint = rpc_endpoint.to_string();
