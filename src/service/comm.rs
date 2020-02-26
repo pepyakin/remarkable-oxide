@@ -17,6 +17,7 @@ use jsonrpsee::{
     Client,
 };
 use log::info;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
@@ -172,10 +173,17 @@ async fn inner_bg_task(
 ) -> anyhow::Result<()> {
     let client = jsonrpsee::ws_raw_client(rpc_endpoint).await?.into();
 
-    // dbg!();
-
     // We will use this stream for all subscriptions.
     let mut unordered_stream = FuturesUnordered::new();
+
+    // An empty `unordered_stream` will return `None` all the time. Apparently, this will actually
+    // lead to starvation of other futures.
+    //
+    // To prevent this we add a future that never resolves.
+    unordered_stream.push({
+        let fut: Pin<Box<dyn Future<Output = ()> + Send>> = Box::pin(futures::future::pending());
+        fut
+    });
 
     // TODO: Set the state to connected.
     // TODO: Handle timeout
@@ -195,11 +203,7 @@ async fn inner_bg_task(
         pin_mut!(next_finalized_head);
 
         futures::select! {
-            e = next_event => {
-                if let Some(e) = e {
-                    // dbg!(e);
-                }
-            }
+            e = next_event => {}
             new_height = next_finalized_head => {
                 // TODO: Reset watchdog
                 // TODO: unwrap
@@ -242,7 +246,7 @@ async fn block_body(client: &Client, hash: String) -> anyhow::Result<SignedBlock
 
 fn handle_next_front_to_back(
     client: &Client,
-    unordered_stream: &mut FuturesUnordered<task::JoinHandle<()>>,
+    unordered_stream: &mut FuturesUnordered<Pin<Box<dyn Future<Output = ()> + Send>>>,
     front_to_back: FrontToBack,
     height_subscribers: &mut Vec<latest::Writer<u64>>,
 ) {
@@ -254,7 +258,7 @@ fn handle_next_front_to_back(
             send_back,
         } => {
             let client = client.clone();
-            unordered_stream.push(task::spawn(async move {
+            unordered_stream.push(Box::pin(async move {
                 // TODO: Let's assume that there are no errors.
                 let result = block_hash(&client, block_num).await.unwrap();
                 let _ = send_back.send(result);
@@ -266,7 +270,7 @@ fn handle_next_front_to_back(
             send_back,
         } => {
             let client = client.clone();
-            unordered_stream.push(task::spawn(async move {
+            unordered_stream.push(Box::pin(async move {
                 // TODO: Let's assume that there are no errors.
                 let result = block_body(&client, block_hash).await.unwrap();
                 let _ = send_back.send(result);
