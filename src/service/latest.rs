@@ -46,7 +46,7 @@ pub struct Reader<T> {
 
 impl<T> Reader<T> {
     pub async fn next(&mut self) -> T {
-        let v = self.rx.next().await.unwrap();
+        let () = self.rx.next().await.unwrap();
         let mut inner = self.inner.lock().await;
 
         // TODO:
