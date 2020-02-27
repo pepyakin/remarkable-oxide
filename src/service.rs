@@ -15,6 +15,7 @@ mod block;
 mod comm;
 mod hash_query;
 mod latest;
+mod watchdog;
 
 pub enum State {
     Connecting,

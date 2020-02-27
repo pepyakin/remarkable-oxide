@@ -3,7 +3,7 @@
 //! This module tries to transparently handle establishing a connection as well as reestablishinging
 //! it in case of an error.
 
-use super::latest;
+use super::{latest, watchdog::Watchdog};
 use crate::chain_data::{Header, SignedBlock};
 use async_std::sync::{Arc, Mutex};
 use async_std::task;
@@ -303,6 +303,8 @@ async fn inner_bg_task(
     // - finalized head. Might be moved to directly fire?
     // - one of requests has finished
     // - from_front
+
+    let mut watchdog = Watchdog::new(Duration::from_secs(10));
     loop {
         let req_finished = inflight_reqs.next().fuse();
         let next_front = from_front.next().fuse();
@@ -312,16 +314,21 @@ async fn inner_bg_task(
         pin_mut!(next_finalized_head);
 
         futures::select! {
+            () = watchdog.wait().fuse() => anyhow::bail!("watchdog triggered"),
             id = req_finished => {
                 if let Some(id) = id {
                     log::trace!("finished request {}", id);
                     // We just fulfilled the request with the given id therefore we need to remove
-                    // it from the unfulfilled list.
+                    // it from the unfulfilled list ...
                     let _ = unfulfilled_reqs.remove(&id);
+                    // ... and reset the watchdog.
+                    watchdog.reset();
                 }
             }
             new_height = next_finalized_head => {
-                // TODO: Reset watchdog
+                // We just received a notification regarding the advancement of the finalized head.
+                // That implies that the connection is still alive.
+                watchdog.reset();
                 // TODO: unwrap
                 notify_new_height(height_subscribers, new_height.unwrap()).await
             }
@@ -340,5 +347,7 @@ async fn inner_bg_task(
                 }
             }
         }
+
+        watchdog.reset();
     }
 }
