@@ -20,5 +20,9 @@ jsonrpsee = { git = "https://github.com/paritytech/jsonrpsee/", features = ["ws"
 sdl2 = "0.32.2"
 dotenv = "0.15.0"
 
+[profile.dev]
+panic = "abort"
+
 [profile.release]
+panic = "abort"
 debug = true
