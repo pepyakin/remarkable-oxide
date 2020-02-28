@@ -6,7 +6,7 @@ use crate::persist;
 use anyhow::Result;
 use async_std::task;
 use futures::prelude::*;
-use futures::{future::FutureExt, pin_mut};
+use futures::pin_mut;
 use log::{debug, error, info, warn};
 use std::collections::VecDeque;
 use std::sync::mpsc;

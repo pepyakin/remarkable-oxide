@@ -14,13 +14,13 @@
 
 use super::{latest, watchdog::Watchdog};
 use crate::chain_data::{Header, SignedBlock};
-use async_std::sync::{Arc, Mutex};
+use async_std::sync::Arc;
 use async_std::task;
-use anyhow::{anyhow, Context};
-use futures::channel::{mpsc, oneshot};
+use anyhow::Context;
+use futures::channel::mpsc;
 use futures::prelude::*;
 use futures::stream::{self, futures_unordered::FuturesUnordered, Stream};
-use futures::{future::FutureExt, pin_mut};
+use futures::{future::FutureExt};
 use jsonrpsee::{
     client::Subscription,
     core::common::{to_value as to_json_value, Params},

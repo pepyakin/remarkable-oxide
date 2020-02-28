@@ -5,9 +5,6 @@ use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::prelude::*;
 
-use async_std::task;
-use std::thread;
-
 pub struct Inner<T> {
     tx: mpsc::Sender<()>,
     value: Option<T>,

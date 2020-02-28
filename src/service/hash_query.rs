@@ -2,11 +2,10 @@
 //! intermittently updated finalized number.
 
 use super::comm::RpcComm;
-use super::latest;
 use super::extendable_range::extendable_range;
 use async_std::task;
 use futures::prelude::*;
-use futures::stream::{self, Stream};
+use futures::stream::Stream;
 use std::time::Duration;
 
 pub fn stream<'a>(

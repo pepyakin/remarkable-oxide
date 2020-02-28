@@ -1,5 +1,5 @@
 use crate::chain_data::{Call, SignedBlock, UncheckedExtrinsic};
-use crate::command::{Chunk, Command};
+use crate::command::Command;
 
 pub fn parse_block(body: SignedBlock) -> Vec<Command> {
     let mut cmds = vec![];
