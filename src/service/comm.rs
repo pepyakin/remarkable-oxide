@@ -306,15 +306,21 @@ async fn inner_bg_task(
         inflight_reqs.push(pending_req.as_future(&client));
     }
 
-    // TODO: Set the state to connected.
     let mut finalized_head = FinalizedHead::subscribe(&client).await?;
 
-    // select on futures:
-    // - finalized head. Might be moved to directly fire?
-    // - one of requests has finished
-    // - from_front
+    // TODO: Set the state to connected.
 
+    // We maintain a watchdog timer and reset it each time the remote shows signs of life, i.e.:
+    // 1. answers requests,
+    // 2. notifies us about the new finalized head.
+    // if the timer is not reset for more than the time it was armed for then we reset the
+    // connection.
+    //
+    // This is not ideal because in theory the server might be responsive but really slow or just
+    // merely because there are no requests from the frontend (which shouldn't be the thing at the
+    // moment of writing). We accept that but don't care that much.
     let mut watchdog = Watchdog::new(Duration::from_secs(10));
+
     loop {
         let req_finished = inflight_reqs.next().fuse();
         let next_front = from_front.next().fuse();
