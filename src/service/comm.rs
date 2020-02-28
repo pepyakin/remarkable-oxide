@@ -1,7 +1,16 @@
-//! A module that abstracts all concerns regarding connections.
+//! This module implements a link to a remote WebSocket JSON-RPC node.
 //!
-//! This module tries to transparently handle establishing a connection as well as reestablishinging
-//! it in case of an error.
+//! This link assumes close coupling between it and the remote node. Specifically, that we do not
+//! expect any non-transient errors. That is, errors that could be fixed by reconnecting.
+//!
+//! There are a couple of reasons for that:
+//!
+//! First, is that at the moment of writing `jsonrpsee`
+//! doesn't propagate error so we cannot tell the difference between a, say, JSON-RPC protocol error
+//! and a plain connection loss.
+//!
+//! Second, we don't actually care that much because there is no way to properly recover from these
+//! kind of errors without any attention from the user/operator.
 
 use super::{latest, watchdog::Watchdog};
 use crate::chain_data::{Header, SignedBlock};
@@ -108,12 +117,16 @@ struct Inner {
     to_back: mpsc::Sender<FrontToBack>,
 }
 
+/// A link to a remote substrate/polkadot node via WebSocket JSON-RPC connection.
+///
+/// See the module-level documentation to get more details.
 #[derive(Clone)]
 pub struct RpcComm {
     inner: Arc<Inner>,
 }
 
 impl RpcComm {
+    /// Establish a link to the remote endpoint specified by the address.
     pub fn start(rpc_endpoint: &str) -> Self {
         let (to_back_tx, to_back_rx) = mpsc::channel(16);
 
@@ -132,6 +145,9 @@ impl RpcComm {
         self.inner.next_id.fetch_add(1, Ordering::Relaxed)
     }
 
+    /// Query the block hash of a block by the given number.
+    ///
+    /// Returns `None` if the remote node doesn't know about the block with the given number.
     pub async fn block_hash(&self, block_num: u64) -> Option<String> {
         let id = self.next_id();
         let (send_back_tx, mut send_back_rx) = mpsc::channel(1);
@@ -151,6 +167,7 @@ impl RpcComm {
         }
     }
 
+    /// Query the block body for the given block hash.
     pub async fn block_body(&self, block_hash: String) -> SignedBlock {
         let id = self.next_id();
         let (send_back_tx, mut send_back_rx) = mpsc::channel(1);
@@ -170,10 +187,6 @@ impl RpcComm {
         }
     }
 
-    // TODO: state
-}
-
-impl RpcComm {
     /// Returns the stream that produces the highest finalized block number.
     pub async fn finalized_height(&self) -> impl Stream<Item = u64> {
         let (tx, rx) = latest::latest::<u64>();
@@ -189,12 +202,11 @@ impl RpcComm {
             Some((next, rx))
         })
     }
+
+    // TODO: state
 }
 
 async fn background_task(rpc_endpoint: String, mut from_front: mpsc::Receiver<FrontToBack>) {
-    // TODO: a container for pending requests that came from the frontend. These requests must be
-    // independent from the client since we will drop it from time to time.
-
     let mut unfulfilled_reqs = HashMap::new();
     let mut height_subscribers = Vec::new();
 
@@ -334,7 +346,6 @@ async fn inner_bg_task(
             }
             nf = next_front => {
                 match nf {
-                    None => return Ok(()),
                     Some(front_to_back) => {
                         handle_next_front_to_back(
                             &client,
@@ -344,6 +355,9 @@ async fn inner_bg_task(
                             unfulfilled_reqs
                         )
                     }
+                    // Connection to the frontend has been lost meaning that it is shutting down.
+                    // Do the same here.
+                    None => return Ok(()),
                 }
             }
         }
