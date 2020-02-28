@@ -323,14 +323,9 @@ async fn inner_bg_task(
     let mut watchdog = Watchdog::new(Duration::from_secs(10));
 
     loop {
-        let req_finished = inflight_reqs.next().fuse();
-        let next_front = from_front.next().fuse();
-        pin_mut!(req_finished);
-        pin_mut!(next_front);
-
         futures::select! {
             () = watchdog.wait().fuse() => anyhow::bail!("watchdog triggered"),
-            id = req_finished => {
+            id = inflight_reqs.next().fuse() => {
                 if let Some(id) = id {
                     log::trace!("finished request {}", id);
                     // We just fulfilled the request with the given id therefore we need to remove
@@ -347,7 +342,7 @@ async fn inner_bg_task(
                 watchdog.reset();
                 notify_new_height(height_subscribers, new_height).await;
             }
-            nf = next_front => {
+            nf = from_front.next().fuse() => {
                 match nf {
                     Some(front_to_back) => {
                         handle_next_front_to_back(
