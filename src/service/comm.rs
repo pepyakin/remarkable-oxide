@@ -16,6 +16,7 @@ use super::{latest, watchdog::Watchdog};
 use crate::chain_data::{Header, SignedBlock};
 use async_std::sync::{Arc, Mutex};
 use async_std::task;
+use anyhow::{anyhow, Context};
 use futures::channel::{mpsc, oneshot};
 use futures::prelude::*;
 use futures::stream::{self, futures_unordered::FuturesUnordered, Stream};
@@ -324,10 +325,8 @@ async fn inner_bg_task(
     loop {
         let req_finished = inflight_reqs.next().fuse();
         let next_front = from_front.next().fuse();
-        let next_finalized_head = finalized_head.next().fuse();
         pin_mut!(req_finished);
         pin_mut!(next_front);
-        pin_mut!(next_finalized_head);
 
         futures::select! {
             () = watchdog.wait().fuse() => anyhow::bail!("watchdog triggered"),
@@ -341,12 +340,12 @@ async fn inner_bg_task(
                     watchdog.reset();
                 }
             }
-            new_height = next_finalized_head => {
+            new_height = finalized_head.next().fuse() => {
+                let new_height = new_height.context("finalized head returned an error")?;
                 // We just received a notification regarding the advancement of the finalized head.
                 // That implies that the connection is still alive.
                 watchdog.reset();
-                // TODO: unwrap
-                notify_new_height(height_subscribers, new_height.unwrap()).await
+                notify_new_height(height_subscribers, new_height).await;
             }
             nf = next_front => {
                 match nf {
