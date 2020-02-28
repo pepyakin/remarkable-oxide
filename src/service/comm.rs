@@ -361,7 +361,5 @@ async fn inner_bg_task(
                 }
             }
         }
-
-        watchdog.reset();
     }
 }
