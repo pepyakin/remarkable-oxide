@@ -307,9 +307,7 @@ async fn inner_bg_task(
     }
 
     // TODO: Set the state to connected.
-    // TODO: Handle timeout
-    // TODO: Handle unwrap
-    let mut finalized_head = FinalizedHead::subscribe(&client).await.unwrap();
+    let mut finalized_head = FinalizedHead::subscribe(&client).await?;
 
     // select on futures:
     // - finalized head. Might be moved to directly fire?
