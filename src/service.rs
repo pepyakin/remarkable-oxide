@@ -17,6 +17,7 @@ mod extendable_range;
 mod hash_query;
 mod latest;
 mod watchdog;
+mod chain_data;
 
 pub enum State {
     Connecting,

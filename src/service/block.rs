@@ -1,4 +1,4 @@
-use crate::chain_data::{Call, SignedBlock, UncheckedExtrinsic};
+use super::chain_data::{Call, SignedBlock, UncheckedExtrinsic};
 use crate::command::Command;
 
 pub fn parse_block(body: SignedBlock) -> Vec<Command> {

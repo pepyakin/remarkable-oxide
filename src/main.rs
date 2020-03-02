@@ -7,7 +7,6 @@ use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::rect::Rect;
 use std::time::Duration;
 
-mod chain_data;
 mod command;
 mod config;
 mod persist;

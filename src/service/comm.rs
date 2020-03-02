@@ -12,8 +12,7 @@
 //! Second, we don't actually care that much because there is no way to properly recover from these
 //! kind of errors without any attention from the user/operator.
 
-use super::{latest, watchdog::Watchdog};
-use crate::chain_data::{Header, SignedBlock};
+use super::{latest, watchdog::Watchdog, chain_data::{Header, SignedBlock}};
 use anyhow::Context;
 use async_std::sync::Arc;
 use async_std::task;
