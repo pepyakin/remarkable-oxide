@@ -5,18 +5,18 @@ use crate::config::Config;
 use crate::persist;
 use anyhow::Result;
 use async_std::task;
-use futures::prelude::*;
 use futures::pin_mut;
+use futures::prelude::*;
 use log::{debug, error, info, warn};
 use std::collections::VecDeque;
 use std::sync::mpsc;
 
 mod block;
 mod comm;
+mod extendable_range;
 mod hash_query;
 mod latest;
 mod watchdog;
-mod extendable_range;
 
 pub enum State {
     Connecting,
@@ -76,13 +76,10 @@ pub fn start(config: Config) -> Result<Service> {
             let stream = hash_query::stream(start_block_num, finalized_height, &comm)
                 .map({
                     let comm = &comm;
-                    move |(block_num, block_hash)| {
-                        // dbg!();
-                        async move {
-                            let block = comm.block_body(block_hash).await;
-                            let cmds = block::parse_block(block);
-                            Chunk { cmds, block_num }
-                        }
+                    move |(block_num, block_hash)| async move {
+                        let block = comm.block_body(block_hash).await;
+                        let cmds = block::parse_block(block);
+                        Chunk { cmds, block_num }
                     }
                 })
                 .buffered(3);
@@ -102,7 +99,6 @@ pub fn start(config: Config) -> Result<Service> {
                 }
                 if let Err(_) = tx.send(chunk) {
                     // The other end hung-up. We treat it as a shutdown signal.
-                    // dbg!();
                     return;
                 }
             }

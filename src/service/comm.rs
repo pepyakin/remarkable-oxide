@@ -14,13 +14,13 @@
 
 use super::{latest, watchdog::Watchdog};
 use crate::chain_data::{Header, SignedBlock};
+use anyhow::Context;
 use async_std::sync::Arc;
 use async_std::task;
-use anyhow::Context;
 use futures::channel::mpsc;
+use futures::future::FutureExt;
 use futures::prelude::*;
 use futures::stream::{self, futures_unordered::FuturesUnordered, Stream};
-use futures::{future::FutureExt};
 use jsonrpsee::{
     client::Subscription,
     core::common::{to_value as to_json_value, Params},
@@ -110,7 +110,7 @@ impl Request {
 
 enum FrontToBack {
     Request(Request),
-    SubscribeFinalizedHead { tx: latest::Writer<u64> },
+    SubscribeFinalizedHead { tx: latest::Setter<u64> },
 }
 
 struct Inner {
@@ -199,7 +199,7 @@ impl RpcComm {
             .unwrap();
 
         stream::unfold(rx, |mut rx| async move {
-            let next = rx.next().await;
+            let next = rx.get().await;
             Some((next, rx))
         })
     }
@@ -252,14 +252,14 @@ impl FinalizedHead {
     }
 }
 
-async fn notify_new_height(height_subscribers: &mut [latest::Writer<u64>], new_height: u64) {
+async fn notify_new_height(height_subscribers: &mut [latest::Setter<u64>], new_height: u64) {
     log::debug!(
         "notifying {} subscribers about new finalized {}",
         height_subscribers.len(),
         new_height
     );
     for sub in height_subscribers {
-        sub.write(new_height).await;
+        sub.set(new_height).await;
     }
 }
 
@@ -267,7 +267,7 @@ fn handle_next_front_to_back(
     client: &Client,
     inflight_reqs: &mut FuturesUnordered<Pin<Box<dyn Future<Output = usize> + Send>>>,
     front_to_back: FrontToBack,
-    height_subscribers: &mut Vec<latest::Writer<u64>>,
+    height_subscribers: &mut Vec<latest::Setter<u64>>,
     unfulfilled_reqs: &mut HashMap<usize, Request>,
 ) {
     match front_to_back {
@@ -285,7 +285,7 @@ fn handle_next_front_to_back(
 async fn inner_bg_task(
     rpc_endpoint: &str,
     from_front: &mut mpsc::Receiver<FrontToBack>,
-    height_subscribers: &mut Vec<latest::Writer<u64>>,
+    height_subscribers: &mut Vec<latest::Setter<u64>>,
     unfulfilled_reqs: &mut HashMap<usize, Request>,
 ) -> anyhow::Result<()> {
     let client = jsonrpsee::ws_raw_client(rpc_endpoint).await?.into();

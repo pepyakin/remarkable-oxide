@@ -1,5 +1,5 @@
 use async_std::task;
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 
 /// A simple primitive that sleeps for the specified amount of time.
 ///
@@ -10,6 +10,7 @@ pub struct Watchdog {
 }
 
 impl Watchdog {
+    /// Initialize a new instance of a `Watchdog` with the given duration until firing.
     pub fn new(deadline: Duration) -> Self {
         Self {
             reset_at: Instant::now(),
@@ -30,7 +31,7 @@ impl Watchdog {
         match deadline.checked_duration_since(Instant::now()) {
             Some(dur) => task::sleep(dur).await,
             // `Instant::now` is later than the deadline meaning that we are done here.
-            None => {},
+            None => {}
         }
     }
 }

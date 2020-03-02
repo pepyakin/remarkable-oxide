@@ -19,7 +19,6 @@ pub fn stream<'a>(
                 match comm.block_hash(block_num).await {
                     Some(block_hash) => break (block_num, block_hash),
                     None => {
-                        dbg!();
                         task::sleep(Duration::from_secs(1)).await;
                         continue;
                     }
