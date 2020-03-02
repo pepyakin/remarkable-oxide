@@ -1,6 +1,7 @@
 //! A utility that accepts multiple items but produces only the last one.
 
 use async_std::sync::Arc;
+use async_std::task;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::prelude::*;
@@ -75,8 +76,15 @@ fn latest<T>() -> (Setter<T>, Getter<T>) {
 /// that was produced by the original stream.
 ///
 /// Useful to deal with backpressure issues when only the latest value matters.
-pub fn wrap_stream<T>(stream: impl Stream<Item=T>) -> impl Stream<Item=T> {
+pub fn wrap_stream<T: Send + 'static>(
+    mut stream: impl Stream<Item = T> + Unpin + Send + 'static,
+) -> impl Stream<Item = T> + 'static {
     let (s, g) = latest::<T>();
+    task::spawn(async move {
+        while let Some(n) = stream.next().await {
+            s.set(n).await;
+        }
+    });
     stream::unfold(g, |mut g| async move {
         let v = g.get().await;
         Some((v, g))

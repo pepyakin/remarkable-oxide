@@ -1,4 +1,4 @@
-//! High-level logic that orchestrates loading and processing the blocks.
+//! High-level logic that orchestrates loading and extracting the commands.
 
 use crate::command::{Chunk, Command};
 use crate::config::Config;
