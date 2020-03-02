@@ -5,39 +5,48 @@ use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::prelude::*;
 
-pub struct Inner<T> {
+struct Inner<T> {
     tx: mpsc::Sender<()>,
     value: Option<T>,
 }
 
-pub struct Setter<T> {
+struct Setter<T> {
     inner: Arc<Mutex<Inner<T>>>,
 }
 
 impl<T> Setter<T> {
-    pub async fn set(&self, value: T) {
+    /// Set the latest value notifying the corresponding [`Getter`].
+    async fn set(&self, value: T) {
         let mut inner = self.inner.lock().await;
-        inner.value = Some(value);
+
+        // Try to send a signal to the getter. Since the `tx` has a capacity of 1 there are two
+        // normal cases ...
         match inner.tx.try_send(()) {
+            // ... when there were no pending signals ...
             Ok(()) => {}
+            // ... or there were. ...
             Err(err) if err.is_full() => {}
-            Err(err) if err.is_disconnected() => {
-                // This means that the rx side is disconnected. For now, just noop, but in future
-                // we might consider to propagate the error so the producer has a chance to stop.
-            }
+            // ... another possible situation is when the other side hung-up.
+            //
+            // For now, just noop, but in future we might consider to propagate the error so the
+            // producer has a chance to stop.
+            Err(err) if err.is_disconnected() => {}
             _ => unreachable!(""),
         }
+
+        // In anycase, we update the latest value.
+        inner.value = Some(value);
     }
 }
 
-pub struct Getter<T> {
+struct Getter<T> {
     rx: mpsc::Receiver<()>,
     inner: Arc<Mutex<Inner<T>>>,
 }
 
 impl<T> Getter<T> {
     /// A future that returns the last value set by [`Setter::set`].
-    pub async fn get(&mut self) -> T {
+    async fn get(&mut self) -> T {
         // Receive the notification and then take the lock. Some time can pass between receiving
         // a signal and taking the lock - that's fine.
         let () = self.rx.next().await.unwrap();
@@ -52,7 +61,7 @@ impl<T> Getter<T> {
     }
 }
 
-pub fn latest<T>() -> (Setter<T>, Getter<T>) {
+fn latest<T>() -> (Setter<T>, Getter<T>) {
     let (tx, rx) = mpsc::channel(0);
     let inner = Arc::new(Mutex::new(Inner { tx, value: None }));
     let writer = Setter {
@@ -60,6 +69,18 @@ pub fn latest<T>() -> (Setter<T>, Getter<T>) {
     };
     let reader = Getter { rx, inner };
     (writer, reader)
+}
+
+/// Wrap a stream that produces a lot of items and return a stream that produces only the last item
+/// that was produced by the original stream.
+///
+/// Useful to deal with backpressure issues when only the latest value matters.
+pub fn wrap_stream<T>(stream: impl Stream<Item=T>) -> impl Stream<Item=T> {
+    let (s, g) = latest::<T>();
+    stream::unfold(g, |mut g| async move {
+        let v = g.get().await;
+        Some((v, g))
+    })
 }
 
 #[cfg(test)]

@@ -110,7 +110,7 @@ impl Request {
 
 enum FrontToBack {
     Request(Request),
-    SubscribeFinalizedHead { tx: latest::Setter<u64> },
+    SubscribeFinalizedHead { tx: mpsc::UnboundedSender<u64> },
 }
 
 struct Inner {
@@ -188,20 +188,19 @@ impl RpcComm {
         }
     }
 
-    /// Returns the stream that produces the highest finalized block number.
+    /// Returns a stream that produces the highest finalized block number each time the remote
+    /// sends a notification regarding a new one.
+    ///
+    /// The stream's items should be consumed, otherwise they will pile up.
     pub async fn finalized_height(&self) -> impl Stream<Item = u64> {
-        let (tx, rx) = latest::latest::<u64>();
+        let (tx, rx) = mpsc::unbounded::<u64>();
         self.inner
             .to_back
             .clone()
             .send(FrontToBack::SubscribeFinalizedHead { tx })
             .await
             .unwrap();
-
-        stream::unfold(rx, |mut rx| async move {
-            let next = rx.get().await;
-            Some((next, rx))
-        })
+        rx
     }
 
     // TODO: state
@@ -252,14 +251,14 @@ impl FinalizedHead {
     }
 }
 
-async fn notify_new_height(height_subscribers: &mut [latest::Setter<u64>], new_height: u64) {
+async fn notify_new_height(height_subscribers: &mut [mpsc::UnboundedSender<u64>], new_height: u64) {
     log::debug!(
         "notifying {} subscribers about new finalized {}",
         height_subscribers.len(),
         new_height
     );
     for sub in height_subscribers {
-        sub.set(new_height).await;
+        sub.send(new_height).await;
     }
 }
 
@@ -267,7 +266,7 @@ fn handle_next_front_to_back(
     client: &Client,
     inflight_reqs: &mut FuturesUnordered<Pin<Box<dyn Future<Output = usize> + Send>>>,
     front_to_back: FrontToBack,
-    height_subscribers: &mut Vec<latest::Setter<u64>>,
+    height_subscribers: &mut Vec<mpsc::UnboundedSender<u64>>,
     unfulfilled_reqs: &mut HashMap<usize, Request>,
 ) {
     match front_to_back {
@@ -285,7 +284,7 @@ fn handle_next_front_to_back(
 async fn inner_bg_task(
     rpc_endpoint: &str,
     from_front: &mut mpsc::Receiver<FrontToBack>,
-    height_subscribers: &mut Vec<latest::Setter<u64>>,
+    height_subscribers: &mut Vec<mpsc::UnboundedSender<u64>>,
     unfulfilled_reqs: &mut HashMap<usize, Request>,
 ) -> anyhow::Result<()> {
     let client = jsonrpsee::ws_raw_client(rpc_endpoint).await?.into();

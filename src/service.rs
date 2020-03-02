@@ -68,10 +68,15 @@ pub fn start(config: Config) -> Result<Service> {
         async move {
             let comm = comm::RpcComm::start(&config.rpc_hostname);
 
+            // Obtian the stream that produces the finalized head ...
             let finalized_height = comm
                 .finalized_height()
                 .await
                 .inspect(|fin_num| info!("finalization advanced to {}", fin_num));
+            // and then just limit it to the latest value. Otherwise, because `hash_query::stream`
+            // doesn't consume the items for a lot of time there is chance of blowing up the memory
+            // consumption.
+            let finalized_height = latest::wrap_stream(finalized_height);
             pin_mut!(finalized_height);
             let stream = hash_query::stream(start_block_num, finalized_height, &comm)
                 .map({
@@ -85,7 +90,6 @@ pub fn start(config: Config) -> Result<Service> {
                 .buffered(3);
 
             pin_mut!(stream);
-
             loop {
                 let chunk = stream.next().await.unwrap();
                 if chunk.block_num % 1000 == 0 {
