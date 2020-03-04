@@ -21,12 +21,6 @@ mod hash_query;
 mod latest;
 mod watchdog;
 
-pub enum State {
-    Connecting,
-    Syncing,
-    Idle,
-}
-
 pub struct Service {
     worker_handle: task::JoinHandle<()>,
     rx: mpsc::Receiver<Chunk>,
@@ -34,9 +28,15 @@ pub struct Service {
     pending: VecDeque<Command>,
 }
 
+pub struct StatusReport {
+    connection_status: comm::Status,
+    current_block: u64,
+    finalized_block: u64,
+}
+
 impl Service {
-    pub fn state(&self) -> State {
-        State::Syncing
+    pub fn status_report(&self) -> StatusReport {
+        todo!();
     }
 
     pub fn poll(&mut self) -> Option<Command> {
