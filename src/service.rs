@@ -1,4 +1,6 @@
 //! High-level logic that orchestrates loading and extracting the commands.
+//!
+//! Note that the interface here is purely synchronous.
 
 use crate::command::{Chunk, Command};
 use crate::config::Config;
@@ -12,12 +14,12 @@ use std::collections::VecDeque;
 use std::sync::mpsc;
 
 mod block;
+mod chain_data;
 mod comm;
 mod extendable_range;
 mod hash_query;
 mod latest;
 mod watchdog;
-mod chain_data;
 
 pub enum State {
     Connecting,

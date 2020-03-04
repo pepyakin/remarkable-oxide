@@ -12,7 +12,11 @@
 //! Second, we don't actually care that much because there is no way to properly recover from these
 //! kind of errors without any attention from the user/operator.
 
-use super::{latest, watchdog::Watchdog, chain_data::{Header, SignedBlock}};
+use super::{
+    chain_data::{Header, SignedBlock},
+    latest,
+    watchdog::Watchdog,
+};
 use anyhow::Context;
 use async_std::sync::Arc;
 use async_std::task;
@@ -107,9 +111,16 @@ impl Request {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Status {
+    Connected,
+    Connecting,
+}
+
 enum FrontToBack {
     Request(Request),
     SubscribeFinalizedHead { tx: mpsc::UnboundedSender<u64> },
+    SubscribeStatus { tx: mpsc::UnboundedSender<Status> },
 }
 
 struct Inner {
@@ -202,18 +213,30 @@ impl RpcComm {
         rx
     }
 
-    // TODO: state
+    /// Returns a stream that produces notifications regarding the current status of this link.
+    pub async fn status(&self) -> impl Stream<Item = Status> {
+        let (tx, rx) = mpsc::unbounded::<Status>();
+        self.inner
+            .to_back
+            .clone()
+            .send(FrontToBack::SubscribeStatus { tx })
+            .await
+            .unwrap();
+        rx
+    }
 }
 
 async fn background_task(rpc_endpoint: String, mut from_front: mpsc::Receiver<FrontToBack>) {
     let mut unfulfilled_reqs = HashMap::new();
     let mut height_subscribers = Vec::new();
+    let mut status_subscribers = Vec::new();
 
     loop {
         match inner_bg_task(
             &rpc_endpoint,
             &mut from_front,
             &mut height_subscribers,
+            &mut status_subscribers,
             &mut unfulfilled_reqs,
         )
         .await
@@ -221,6 +244,7 @@ async fn background_task(rpc_endpoint: String, mut from_front: mpsc::Receiver<Fr
             Ok(()) => return,
             Err(err) => {
                 info!("connection error: {}. Retrying shortly...", err);
+                notify_new_status(&mut status_subscribers, Status::Connecting).await;
                 task::sleep(Duration::from_secs(5)).await;
             }
         }
@@ -250,14 +274,36 @@ impl FinalizedHead {
     }
 }
 
-async fn notify_new_height(height_subscribers: &mut [mpsc::UnboundedSender<u64>], new_height: u64) {
+async fn notify_new_height(
+    height_subscribers: &mut Vec<mpsc::UnboundedSender<u64>>,
+    new_height: u64,
+) {
     log::debug!(
         "notifying {} subscribers about new finalized {}",
         height_subscribers.len(),
         new_height
     );
-    for sub in height_subscribers {
-        sub.send(new_height).await;
+    let mut i = 0;
+    while i < height_subscribers.len() {
+        if let Err(_) = height_subscribers[i].send(new_height).await {
+            height_subscribers.remove(i);
+            continue;
+        }
+        i += 1;
+    }
+}
+
+async fn notify_new_status(
+    status_subscribers: &mut Vec<mpsc::UnboundedSender<Status>>,
+    new_status: Status,
+) {
+    let mut i = 0;
+    while i < status_subscribers.len() {
+        if let Err(_) = status_subscribers[i].send(new_status).await {
+            status_subscribers.remove(i);
+            continue;
+        }
+        i += 1;
     }
 }
 
@@ -266,6 +312,7 @@ fn handle_next_front_to_back(
     inflight_reqs: &mut FuturesUnordered<Pin<Box<dyn Future<Output = usize> + Send>>>,
     front_to_back: FrontToBack,
     height_subscribers: &mut Vec<mpsc::UnboundedSender<u64>>,
+    status_subscribers: &mut Vec<mpsc::UnboundedSender<Status>>,
     unfulfilled_reqs: &mut HashMap<usize, Request>,
 ) {
     match front_to_back {
@@ -277,6 +324,9 @@ fn handle_next_front_to_back(
         FrontToBack::SubscribeFinalizedHead { tx } => {
             height_subscribers.push(tx);
         }
+        FrontToBack::SubscribeStatus { tx } => {
+            status_subscribers.push(tx);
+        }
     }
 }
 
@@ -284,6 +334,7 @@ async fn inner_bg_task(
     rpc_endpoint: &str,
     from_front: &mut mpsc::Receiver<FrontToBack>,
     height_subscribers: &mut Vec<mpsc::UnboundedSender<u64>>,
+    status_subscribers: &mut Vec<mpsc::UnboundedSender<Status>>,
     unfulfilled_reqs: &mut HashMap<usize, Request>,
 ) -> anyhow::Result<()> {
     let client = jsonrpsee::ws_raw_client(rpc_endpoint).await?.into();
@@ -307,7 +358,8 @@ async fn inner_bg_task(
 
     let mut finalized_head = FinalizedHead::subscribe(&client).await?;
 
-    // TODO: Set the state to connected.
+    // At this point we are fully connected. Update the status.
+    notify_new_status(status_subscribers, Status::Connected).await;
 
     // We maintain a watchdog timer and reset it each time the remote shows signs of life, i.e.:
     // 1. answers requests,
@@ -348,6 +400,7 @@ async fn inner_bg_task(
                             &mut inflight_reqs,
                             front_to_back,
                             height_subscribers,
+                            status_subscribers,
                             unfulfilled_reqs
                         )
                     }
