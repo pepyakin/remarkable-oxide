@@ -66,64 +66,67 @@ pub fn start(config: Config) -> Result<Service> {
         let start_block_num = persister.block_num().await?;
         Ok::<_, anyhow::Error>((persister, start_block_num))
     })?;
-    let worker_handle = task::spawn({
-        let mut persister = persister.clone();
-        async move {
-            let comm = comm::RpcComm::start(&config.rpc_hostname);
-
-            // Obtian the stream that produces the finalized head ...
-            let finalized_height = comm
-                .finalized_height()
-                .await
-                .inspect(|fin_num| info!("finalization advanced to {}", fin_num));
-            // and then just limit it to the latest value. Otherwise, because `hash_query::stream`
-            // doesn't consume the items for a lot of time there is chance of blowing up the memory
-            // consumption.
-            let finalized_height = latest::wrap_stream(finalized_height);
-            pin_mut!(finalized_height);
-            let stream = hash_query::stream(start_block_num, finalized_height, &comm)
-                .map({
-                    let comm = &comm;
-                    move |(block_num, block_hash)| async move {
-                        let block = comm.block_body(block_hash).await;
-                        let cmds = block::parse_block(block);
-                        Chunk { cmds, block_num }
-                    }
-                })
-                .buffered(3);
-
-            pin_mut!(stream);
-            loop {
-                let chunk = stream.next().await.unwrap();
-                if chunk.block_num % 1000 == 0 {
-                    info!("current block: {}", chunk.block_num);
-                }
-                if !chunk.cmds.is_empty() {
-                    info!("{} has {} cmds", chunk.block_num, chunk.cmds.len());
-                }
-                if let Err(err) = persister.apply(&chunk).await {
-                    warn!("Failed to persist {}", err);
-                }
-                if let Err(_) = tx.send(chunk) {
-                    // The other end hung-up. We treat it as a shutdown signal.
-                    return;
-                }
-            }
-
-            debug!("Shutting down the persister");
-            if let Err(err) = persister.shutdown().await {
-                warn!(
-                    "An error occured while shutting down the persister: {}",
-                    err
-                );
-            }
-        }
-    });
-
+    let worker_handle = task::spawn(worker(config, start_block_num, persister.clone(), tx));
     Ok(Service {
         worker_handle,
         rx,
         persister,
         pending: VecDeque::new(),
     })
+}
+
+async fn worker(
+    config: Config,
+    start_block_num: u64,
+    mut persister: persist::Persister,
+    tx: mpsc::Sender<Chunk>,
+) {
+    let comm = comm::RpcComm::start(&config.rpc_hostname);
+
+    // Obtian the stream that produces the finalized head ...
+    let finalized_height = comm
+        .finalized_height()
+        .await
+        .inspect(|fin_num| info!("finalization advanced to {}", fin_num));
+    // and then just limit it to the latest value. Otherwise, because `hash_query::stream`
+    // doesn't consume the items for a lot of time there is chance of blowing up the memory
+    // consumption.
+    let finalized_height = latest::wrap_stream(finalized_height);
+    pin_mut!(finalized_height);
+    let stream = hash_query::stream(start_block_num, finalized_height, &comm)
+        .map({
+            let comm = &comm;
+            move |(block_num, block_hash)| async move {
+                let block = comm.block_body(block_hash).await;
+                let cmds = block::parse_block(block);
+                Chunk { cmds, block_num }
+            }
+        })
+        .buffered(3);
+
+    pin_mut!(stream);
+    loop {
+        let chunk = stream.next().await.unwrap();
+        if chunk.block_num % 1000 == 0 {
+            info!("current block: {}", chunk.block_num);
+        }
+        if !chunk.cmds.is_empty() {
+            info!("{} has {} cmds", chunk.block_num, chunk.cmds.len());
+        }
+        if let Err(err) = persister.apply(&chunk).await {
+            warn!("Failed to persist {}", err);
+        }
+        if let Err(_) = tx.send(chunk) {
+            // The other end hung-up. We treat it as a shutdown signal.
+            return;
+        }
+    }
+
+    debug!("Shutting down the persister");
+    if let Err(err) = persister.shutdown().await {
+        warn!(
+            "An error occured while shutting down the persister: {}",
+            err
+        );
+    }
 }
