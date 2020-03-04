@@ -342,15 +342,6 @@ async fn inner_bg_task(
     // We will use this stream for all subscriptions.
     let mut inflight_reqs = FuturesUnordered::new();
 
-    // An empty `inflight_reqs` will return `None` all the time. Apparently, this will actually
-    // lead to starvation of other futures.
-    //
-    // To prevent this we add a future that never resolves.
-    inflight_reqs.push({
-        let fut: Pin<Box<dyn Future<Output = usize> + Send>> = Box::pin(futures::future::pending());
-        fut
-    });
-
     // Restart all pending requests that are left from the previous run if any.
     for pending_req in unfulfilled_reqs.values() {
         inflight_reqs.push(pending_req.as_future(&client));
@@ -375,15 +366,13 @@ async fn inner_bg_task(
     loop {
         futures::select! {
             () = watchdog.wait().fuse() => anyhow::bail!("watchdog triggered"),
-            id = inflight_reqs.next().fuse() => {
-                if let Some(id) = id {
-                    log::trace!("finished request {}", id);
-                    // We just fulfilled the request with the given id therefore we need to remove
-                    // it from the unfulfilled list ...
-                    let _ = unfulfilled_reqs.remove(&id);
-                    // ... and reset the watchdog.
-                    watchdog.reset();
-                }
+            id = inflight_reqs.select_next_some() => {
+                log::trace!("finished request {}", id);
+                // We just fulfilled the request with the given id therefore we need to remove
+                // it from the unfulfilled list ...
+                let _ = unfulfilled_reqs.remove(&id);
+                // ... and reset the watchdog.
+                watchdog.reset();
             }
             new_height = finalized_head.next().fuse() => {
                 let new_height = new_height.context("finalized head returned an error")?;
