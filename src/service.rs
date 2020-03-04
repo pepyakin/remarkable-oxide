@@ -9,6 +9,7 @@ use anyhow::Result;
 use async_std::task;
 use futures::pin_mut;
 use futures::prelude::*;
+use futures::stream;
 use log::{debug, error, info, warn};
 use std::collections::VecDeque;
 use std::sync::mpsc;
@@ -81,44 +82,54 @@ async fn worker(
     mut persister: persist::Persister,
     tx: mpsc::Sender<Chunk>,
 ) {
+    enum Event {
+        CommStatusChanged(comm::Status),
+        NewFinalizedHeight(u64),
+        BlockProcessed(Chunk),
+    }
+
     let comm = comm::RpcComm::start(&config.rpc_hostname);
 
-    // Obtian the stream that produces the finalized head ...
-    let finalized_height = comm
-        .finalized_height()
-        .await
-        .inspect(|fin_num| info!("finalization advanced to {}", fin_num));
-    // and then just limit it to the latest value. Otherwise, because `hash_query::stream`
-    // doesn't consume the items for a lot of time there is chance of blowing up the memory
-    // consumption.
-    let finalized_height = latest::wrap_stream(finalized_height);
+    // Obtian the stream that produces the finalized head and then limit it to the latest value.
+    // Otherwise, because `hash_query::stream` doesn't consume the items for a lot of time there is
+    // chance of blowing up the memory consumption.
+    let finalized_height = latest::wrap_stream(comm.finalized_height().await);
     pin_mut!(finalized_height);
-    let stream = hash_query::stream(start_block_num, finalized_height, &comm)
-        .map({
-            let comm = &comm;
-            move |(block_num, block_hash)| async move {
-                let block = comm.block_body(block_hash).await;
-                let cmds = block::parse_block(block);
-                Chunk { cmds, block_num }
-            }
-        })
-        .buffered(3);
+    let block_ev =
+        hash_query::stream(start_block_num, finalized_height, &comm).map(Event::BlockProcessed);
 
+    // Then, obtain the second finalized height stream.
+    let finalized_height_ev = comm.finalized_height().await.map(Event::NewFinalizedHeight);
+
+    let status_ev = comm.status().await.map(Event::CommStatusChanged);
+
+    let stream = stream::select(block_ev, stream::select(finalized_height_ev, status_ev));
     pin_mut!(stream);
     loop {
-        let chunk = stream.next().await.unwrap();
-        if chunk.block_num % 1000 == 0 {
-            info!("current block: {}", chunk.block_num);
-        }
-        if !chunk.cmds.is_empty() {
-            info!("{} has {} cmds", chunk.block_num, chunk.cmds.len());
-        }
-        if let Err(err) = persister.apply(&chunk).await {
-            warn!("Failed to persist {}", err);
-        }
-        if let Err(_) = tx.send(chunk) {
-            // The other end hung-up. We treat it as a shutdown signal.
-            return;
+        let ev = stream.next().await.unwrap();
+        match ev {
+            Event::CommStatusChanged(status) => {}
+            Event::NewFinalizedHeight(new_height) => {}
+            Event::BlockProcessed(chunk) => {
+                if chunk.block_num % 1000 == 0 {
+                    info!("current block: {}", chunk.block_num);
+                }
+                if !chunk.cmds.is_empty() {
+                    info!("{} has {} cmds", chunk.block_num, chunk.cmds.len());
+                }
+                if let Err(err) = persister.apply(&chunk).await {
+                    // Hopefully the change was atomic. Otherwise, the file might end up corrupted.
+                    // TODO: Make it actually atomic.
+                    warn!("Failed to persist {}", err);
+                }
+                if let Err(_) = tx.send(chunk) {
+                    // TODO: Handling such an error condition only on attempt to send is not ideal.
+                    // Because there might pass quite some time between closing the other part.
+
+                    // The other end hung-up. We treat it as a shutdown signal.
+                    return;
+                }
+            }
         }
     }
 
