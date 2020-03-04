@@ -7,12 +7,13 @@ use crate::config::Config;
 use crate::persist;
 use anyhow::Result;
 use async_std::task;
+use atomic::Atomic;
 use futures::pin_mut;
 use futures::prelude::*;
 use futures::stream;
 use log::{debug, error, info, warn};
 use std::collections::VecDeque;
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, Mutex};
 
 mod block;
 mod chain_data;
@@ -22,22 +23,26 @@ mod hash_query;
 mod latest;
 mod watchdog;
 
-pub struct Service {
-    worker_handle: task::JoinHandle<()>,
-    rx: mpsc::Receiver<Chunk>,
-    persister: persist::Persister,
-    pending: VecDeque<Command>,
-}
-
+#[derive(Copy, Clone)]
 pub struct StatusReport {
     connection_status: comm::Status,
     current_block: u64,
     finalized_block: u64,
 }
 
+pub struct Service {
+    worker_handle: task::JoinHandle<()>,
+    rx: mpsc::Receiver<Chunk>,
+    persister: persist::Persister,
+    pending: VecDeque<Command>,
+    // Unfortunately, the struct is bigger than the modern hardware can atomically read or write so
+    // we rely on the fallback mode.
+    status_report: Arc<Atomic<StatusReport>>,
+}
+
 impl Service {
     pub fn status_report(&self) -> StatusReport {
-        todo!();
+        self.status_report.load(atomic::Ordering::SeqCst)
     }
 
     pub fn poll(&mut self) -> Option<Command> {
@@ -67,12 +72,24 @@ pub fn start(config: Config) -> Result<Service> {
         let start_block_num = persister.block_num().await?;
         Ok::<_, anyhow::Error>((persister, start_block_num))
     })?;
-    let worker_handle = task::spawn(worker(config, start_block_num, persister.clone(), tx));
+    let status_report = Arc::new(Atomic::new(StatusReport {
+        current_block: start_block_num,
+        finalized_block: start_block_num,
+        connection_status: comm::Status::Connecting,
+    }));
+    let worker_handle = task::spawn(worker(
+        config,
+        start_block_num,
+        persister.clone(),
+        tx,
+        Arc::clone(&status_report),
+    ));
     Ok(Service {
         worker_handle,
         rx,
         persister,
         pending: VecDeque::new(),
+        status_report,
     })
 }
 
@@ -81,6 +98,7 @@ async fn worker(
     start_block_num: u64,
     mut persister: persist::Persister,
     tx: mpsc::Sender<Chunk>,
+    remote_status_report: Arc<Atomic<StatusReport>>,
 ) {
     enum Event {
         CommStatusChanged(comm::Status),
@@ -88,6 +106,7 @@ async fn worker(
         BlockProcessed(Chunk),
     }
 
+    let mut local_status_report = remote_status_report.load(atomic::Ordering::SeqCst);
     let comm = comm::RpcComm::start(&config.rpc_hostname);
 
     // Obtian the stream that produces the finalized head and then limit it to the latest value.
@@ -108,9 +127,18 @@ async fn worker(
     loop {
         let ev = stream.next().await.unwrap();
         match ev {
-            Event::CommStatusChanged(status) => {}
-            Event::NewFinalizedHeight(new_height) => {}
+            Event::CommStatusChanged(status) => {
+                local_status_report.connection_status = status;
+                remote_status_report.store(local_status_report, atomic::Ordering::SeqCst);
+            }
+            Event::NewFinalizedHeight(new_height) => {
+                local_status_report.finalized_block = new_height;
+                remote_status_report.store(local_status_report, atomic::Ordering::SeqCst);
+            }
             Event::BlockProcessed(chunk) => {
+                local_status_report.current_block = chunk.block_num;
+                remote_status_report.store(local_status_report, atomic::Ordering::SeqCst);
+
                 if chunk.block_num % 1000 == 0 {
                     info!("current block: {}", chunk.block_num);
                 }
