@@ -171,11 +171,11 @@ impl RpcComm {
                 send_back: send_back_tx,
             }))
             .await
-            .unwrap();
-        match send_back_rx.next().await {
-            Some(hash) => hash,
-            None => todo!(),
-        }
+            .expect("bg thread hunged up unexpectedly");
+        send_back_rx
+            .next()
+            .await
+            .expect("send_back receiver was dropped unexpectedly")
     }
 
     /// Query the block body for the given block hash.
@@ -191,11 +191,11 @@ impl RpcComm {
                 send_back: send_back_tx,
             }))
             .await
-            .unwrap();
-        match send_back_rx.next().await {
-            Some(block) => block,
-            None => todo!(),
-        }
+            .expect("bg thread hunged up unexpectedly");
+        send_back_rx
+            .next()
+            .await
+            .expect("send_back receiver was dropped unexpectedly")
     }
 
     /// Returns a stream that produces the highest finalized block number each time the remote
