@@ -229,7 +229,7 @@ impl RpcComm {
             .clone()
             .send(FrontToBack::SubscribeFinalizedHead { tx })
             .await
-            .unwrap();
+            .expect("bg thread hunged up unexpectedly");
         rx
     }
 
@@ -241,7 +241,7 @@ impl RpcComm {
             .clone()
             .send(FrontToBack::SubscribeStatus { tx })
             .await
-            .unwrap();
+            .expect("bg thread hunged up unexpectedly");
         rx
     }
 }
