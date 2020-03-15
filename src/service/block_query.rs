@@ -1,5 +1,8 @@
-//! This module allows requesting hashes of finalized blocks from the given starting number to a
-//! intermittently updated finalized number.
+//! This module gives ability to request block bodies from the given starting block number up to
+//! the finalized head.
+//!
+//! The finalized is specified not as a number but rather a stream which allows incrementally
+//! updating the target.
 
 use super::block;
 use super::comm::RpcComm;

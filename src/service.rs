@@ -16,10 +16,10 @@ use std::collections::VecDeque;
 use std::sync::{mpsc, Arc, Mutex};
 
 mod block;
+mod block_query;
 mod chain_data;
 mod comm;
 mod extendable_range;
-mod hash_query;
 mod latest;
 mod watchdog;
 
@@ -110,12 +110,12 @@ async fn worker(
     let comm = comm::RpcComm::start(&config.rpc_hostname);
 
     // Obtian the stream that produces the finalized head and then limit it to the latest value.
-    // Otherwise, because `hash_query::stream` doesn't consume the items for a lot of time there is
+    // Otherwise, because `block_query::stream` doesn't consume the items for a lot of time there is
     // chance of blowing up the memory consumption.
     let finalized_height = latest::wrap_stream(comm.finalized_height().await);
     pin_mut!(finalized_height);
     let block_ev =
-        hash_query::stream(start_block_num, finalized_height, &comm).map(Event::BlockProcessed);
+        block_query::stream(start_block_num, finalized_height, &comm).map(Event::BlockProcessed);
 
     // Then, obtain the second finalized height stream.
     let finalized_height_ev = comm.finalized_height().await.map(Event::NewFinalizedHeight);
