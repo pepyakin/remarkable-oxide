@@ -17,21 +17,18 @@ use async_std::io::{prelude::*, SeekFrom};
 use async_std::path::Path;
 use async_std::sync::{Arc, RwLock};
 
-struct FileOps<'a>(&'a mut File);
-impl<'a> FileOps<'a> {
-    pub async fn read_block_num(&mut self) -> Result<u64> {
-        self.0.seek(SeekFrom::Start(0u64)).await?;
-        let mut buf = [0u8; 8];
-        self.0.read_exact(&mut buf).await?;
-        Ok(u64::from_le_bytes(buf))
-    }
+async fn read_block_num(file: &mut File) -> Result<u64> {
+    file.seek(SeekFrom::Start(0u64)).await?;
+    let mut buf = [0u8; 8];
+    file.read_exact(&mut buf).await?;
+    Ok(u64::from_le_bytes(buf))
+}
 
-    pub async fn read_image_data(&mut self) -> Result<Vec<u8>> {
-        self.0.seek(SeekFrom::Start(8u64)).await?;
-        let mut buf = vec![0u8; 3 * CANVAS_HEIGHT * CANVAS_WIDTH];
-        self.0.read_exact(&mut buf).await?;
-        Ok(buf)
-    }
+async fn read_image_data(file: &mut File) -> Result<Vec<u8>> {
+    file.seek(SeekFrom::Start(8u64)).await?;
+    let mut buf = vec![0u8; 3 * CANVAS_HEIGHT * CANVAS_WIDTH];
+    file.read_exact(&mut buf).await?;
+    Ok(buf)
 }
 
 struct Inner {
@@ -70,13 +67,13 @@ impl Persister {
     /// Returns the last persisted block number.
     pub async fn block_num(&mut self) -> Result<u64> {
         let mut inner = self.inner.write().await;
-        FileOps(&mut inner.file).read_block_num().await
+        read_block_num(&mut inner.file).await
     }
 
     /// Returns the persisted image data.
     pub async fn image_data(&mut self) -> Result<Vec<u8>> {
         let mut inner = self.inner.write().await;
-        FileOps(&mut inner.file).read_image_data().await
+        read_image_data(&mut inner.file).await
     }
 
     /// Shuts down the persister and awaits until all pending commands are stored.
