@@ -12,10 +12,10 @@ mod config;
 mod extendable_range;
 mod latest;
 mod persist;
-mod watchdog;
 mod service;
+mod watchdog;
 
-pub use config::Config;
-pub use service::{Service, StatusReport, start};
-pub use command::Command;
 pub use comm::Status as CommStatus;
+pub use command::Command;
+pub use config::Config;
+pub use service::{start, Service, StatusReport};

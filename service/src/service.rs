@@ -2,12 +2,12 @@
 //!
 //! Note that the interface here is purely synchronous.
 
+use crate::block_query;
+use crate::comm;
 use crate::command::{Chunk, Command};
 use crate::config::Config;
-use crate::comm;
-use crate::persist;
-use crate::block_query;
 use crate::latest;
+use crate::persist;
 use anyhow::Result;
 use async_std::task;
 use atomic::Atomic;
