@@ -180,7 +180,9 @@ impl<Call: codec::Decode> codec::Decode for UncheckedExtrinsic<Call> {
         let version = version & 0b0111_1111;
 
         match version {
-            4 => Ok(Self::V4 {
+            // Annoyingly, we cannot use `Self::` here since "variant is never constructed" lint
+            // gives us a false positive.
+            4 => Ok(UncheckedExtrinsic::<Call>::V4 {
                 signature: if is_signed {
                     Some(self::v4::Signature::decode(input)?)
                 } else {

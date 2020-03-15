@@ -14,7 +14,6 @@
 
 use super::{
     chain_data::{Header, SignedBlock},
-    latest,
     watchdog::Watchdog,
 };
 use anyhow::Context;
@@ -23,7 +22,7 @@ use async_std::task;
 use futures::channel::mpsc;
 use futures::future::FutureExt;
 use futures::prelude::*;
-use futures::stream::{self, futures_unordered::FuturesUnordered, Stream};
+use futures::stream::{futures_unordered::FuturesUnordered, Stream};
 use jsonrpsee::{
     client::Subscription,
     core::common::{to_value as to_json_value, Params},

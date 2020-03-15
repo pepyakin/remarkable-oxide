@@ -2,9 +2,9 @@
 //!
 //! Note that the interface here is purely synchronous.
 
+#![recursion_limit = "1024"]
+
 use crate::command::{Chunk, Command};
-use crate::config::Config;
-use crate::persist;
 use anyhow::Result;
 use async_std::task;
 use atomic::Atomic;
@@ -13,15 +13,20 @@ use futures::prelude::*;
 use futures::stream;
 use log::{debug, error, info, warn};
 use std::collections::VecDeque;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc};
 
 mod block;
 mod block_query;
 mod chain_data;
 mod comm;
+mod command;
+mod config;
 mod extendable_range;
 mod latest;
+mod persist;
 mod watchdog;
+
+pub use config::Config;
 
 #[derive(Copy, Clone)]
 pub struct StatusReport {
@@ -31,7 +36,7 @@ pub struct StatusReport {
 }
 
 pub struct Service {
-    worker_handle: task::JoinHandle<()>,
+    _worker_handle: task::JoinHandle<()>,
     rx: mpsc::Receiver<Chunk>,
     persister: persist::Persister,
     pending: VecDeque<Command>,
@@ -85,7 +90,7 @@ pub fn start(config: Config) -> Result<Service> {
         Arc::clone(&status_report),
     ));
     Ok(Service {
-        worker_handle,
+        _worker_handle: worker_handle,
         rx,
         persister,
         pending: VecDeque::new(),
@@ -155,7 +160,7 @@ async fn worker(
                     // Because there might pass quite some time between closing the other part.
 
                     // The other end hung-up. We treat it as a shutdown signal.
-                    return;
+                    break;
                 }
             }
         }

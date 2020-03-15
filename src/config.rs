@@ -1,27 +1,14 @@
+use remarkable_oxide_service::Config;
 use std::env;
 
-#[derive(Clone)]
-pub struct Config {
-    /// The path where to store the data to persist. See persist.rs
-    pub persisted_data_path: String,
-    /// The hostname where to find the RPC endpoint exposed by a substrate node.
-    pub rpc_hostname: String,
-    /// Should the app go fullscreen?
-    pub fullscreen: bool,
-    /// Should the app hide cursor?
-    pub hide_cursor: bool,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        // The defaults are selected in such a way that the production launch won't require any
-        // settings.
-        Config {
-            persisted_data_path: "persisted_data".to_string(),
-            rpc_hostname: "ws://localhost:1234".to_string(),
-            fullscreen: true,
-            hide_cursor: true,
-        }
+fn default_config() -> Config {
+    // The defaults are selected in such a way that the production launch won't require any
+    // settings.
+    Config {
+        persisted_data_path: "persisted_data".to_string(),
+        rpc_hostname: "ws://localhost:1234".to_string(),
+        fullscreen: true,
+        hide_cursor: true,
     }
 }
 
@@ -58,7 +45,7 @@ pub fn obtain() -> Config {
     let _ = dotenv::dotenv();
 
     // Read the config or use the defaults.
-    let defaults = Config::default();
+    let defaults = default_config();
     Config {
         persisted_data_path: persisted_data_path().unwrap_or(defaults.persisted_data_path),
         rpc_hostname: rpc_hostname().unwrap_or(defaults.rpc_hostname),

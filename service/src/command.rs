@@ -2,8 +2,6 @@
 
 use std::fmt::Write;
 
-// TODO: Constrain the size of the canvas.
-
 pub const CANVAS_WIDTH: usize = 1000;
 pub const CANVAS_HEIGHT: usize = 1000;
 
@@ -32,6 +30,8 @@ impl Command {
         let y = coord_buf[3..6].parse::<u16>().ok()?;
 
         let rgb = (data[5], data[6], data[7]);
+
+        // TODO: Constrain the size of the canvas.
 
         Some(Self { x, y, rgb })
     }
