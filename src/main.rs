@@ -27,17 +27,6 @@ fn init_logger() {
     }
 }
 
-// fn main() -> anyhow::Result<()> {
-//     init_logger();
-
-//     let config = config::obtain();
-//     let mut service = remarkable_oxide_service::start(config.clone())?;
-
-//     loop {
-//         std::thread::sleep(std::time::Duration::from_secs(1));
-//     }
-// }
-
 fn main() -> anyhow::Result<()> {
     init_logger();
 
