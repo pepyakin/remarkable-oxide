@@ -1,6 +1,7 @@
 #![recursion_limit = "1024"]
 
 use anyhow::anyhow;
+use remarkable_oxide_service::{CommStatus, StatusReport};
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::{Color, PixelFormatEnum};
@@ -99,8 +100,30 @@ fn main() -> anyhow::Result<()> {
             .map_err(|msg| anyhow!(msg))?;
         canvas.present();
 
+        let status = render_status_string(service.status_report());
+        canvas
+            .window_mut()
+            .set_title(&status)
+            .map_err(|msg| anyhow!(msg))?;
+
+        // Just sleep 16ms here to achieve 60fps.
+        //
+        // That's really simple and trivial but it is enough for what we are trying to achieve here.
         ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
     }
 
     Ok(())
+}
+
+fn render_status_string(status_report: StatusReport) -> String {
+    if status_report.connection_status == CommStatus::Connecting {
+        "connecting".to_string()
+    } else if status_report.current_block < status_report.finalized_block.saturating_sub(5) {
+        format!(
+            "syncing {}/{}",
+            status_report.current_block, status_report.finalized_block
+        )
+    } else {
+        "idle".to_string()
+    }
 }

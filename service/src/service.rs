@@ -18,11 +18,11 @@ use log::{debug, error, info, warn};
 use std::collections::VecDeque;
 use std::sync::{mpsc, Arc};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct StatusReport {
-    connection_status: comm::Status,
-    current_block: u64,
-    finalized_block: u64,
+    pub connection_status: comm::Status,
+    pub current_block: u64,
+    pub finalized_block: u64,
 }
 
 pub struct Service {

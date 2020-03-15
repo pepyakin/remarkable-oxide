@@ -130,7 +130,7 @@ impl Request {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
     Connected,
     Connecting,
@@ -326,7 +326,7 @@ async fn notify_new_status(
     }
 }
 
-fn handle_next_front_to_back(
+async fn handle_next_front_to_back(
     client: &Client,
     inflight_reqs: &mut FuturesUnordered<Pin<Box<dyn Future<Output = usize> + Send>>>,
     front_to_back: FrontToBack,
@@ -343,8 +343,11 @@ fn handle_next_front_to_back(
         FrontToBack::SubscribeFinalizedHead { tx } => {
             height_subscribers.push(tx);
         }
-        FrontToBack::SubscribeStatus { tx } => {
-            status_subscribers.push(tx);
+        FrontToBack::SubscribeStatus { mut tx } => {
+            // We are always connected at this point.
+            if let Ok(_) = tx.send(Status::Connected).await {
+                status_subscribers.push(tx);
+            }
         }
     }
 }
@@ -410,7 +413,7 @@ async fn inner_bg_task(
                             height_subscribers,
                             status_subscribers,
                             unfulfilled_reqs
-                        )
+                        ).await
                     }
                     // Connection to the frontend has been lost meaning that it is shutting down.
                     // Do the same here.
