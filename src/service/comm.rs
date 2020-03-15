@@ -41,7 +41,7 @@ async fn block_hash(client: &Client, block_number: u64) -> anyhow::Result<Option
     Ok(response)
 }
 
-async fn block_body(client: &Client, hash: String) -> anyhow::Result<SignedBlock> {
+async fn block_body(client: &Client, hash: &str) -> anyhow::Result<SignedBlock> {
     let params = Params::Array(vec![to_json_value(hash)?]);
     let block = client.request("chain_getBlock", params).await?;
     Ok(block)
@@ -69,44 +69,64 @@ impl Request {
     }
 
     fn as_future(&self, client: &Client) -> Pin<Box<dyn Future<Output = usize> + Send>> {
+        // There is a bit of repetition. For now it is bearable but consider adding indirection to
+        // abstract that.
+        //
+        // The strategy here is that we assume that there is no permanent failures. Specifically, we
+        // assume that if a request for block hash fails for certain inputs it will still eventually
+        // resolve. That is, failures are considered intermittent.
+        //
+        // This is the reason why we use a simple retry after a second.
+        const RETRY_DELAY: Duration = Duration::from_secs(1);
+
         let client = client.clone();
         match self {
             Self::BlockHash {
                 id,
                 block_num,
                 send_back,
-            } => {
-                Box::pin({
-                    let id = *id;
-                    let block_num = *block_num;
-                    let mut send_back = send_back.clone();
-                    async move {
-                        // TODO: Let's assume that there are no errors.
-                        let result = block_hash(&client, block_num).await.unwrap();
-                        let _ = send_back.send(result).await;
-                        send_back.close_channel();
-                        id
-                    }
-                })
-            }
+            } => Box::pin({
+                let id = *id;
+                let block_num = *block_num;
+                let mut send_back = send_back.clone();
+                async move {
+                    let result = loop {
+                        match block_hash(&client, block_num).await {
+                            Ok(block_hash) => break block_hash,
+                            Err(_) => {
+                                task::sleep(RETRY_DELAY).await;
+                                continue;
+                            }
+                        }
+                    };
+                    let _ = send_back.send(result).await;
+                    send_back.close_channel();
+                    id
+                }
+            }),
             Self::BlockBody {
                 id,
                 block_hash,
                 send_back,
-            } => {
-                Box::pin({
-                    let id = *id;
-                    let block_hash = block_hash.clone();
-                    let mut send_back = send_back.clone();
-                    async move {
-                        // TODO: Let's assume that there are no errors.
-                        let result = block_body(&client, block_hash).await.unwrap();
-                        let _ = send_back.send(result).await;
-                        send_back.close_channel();
-                        id
-                    }
-                })
-            }
+            } => Box::pin({
+                let id = *id;
+                let block_hash = block_hash.clone();
+                let mut send_back = send_back.clone();
+                async move {
+                    let result = loop {
+                        match block_body(&client, &block_hash).await {
+                            Ok(block) => break block,
+                            Err(_) => {
+                                task::sleep(RETRY_DELAY).await;
+                                continue;
+                            }
+                        }
+                    };
+                    let _ = send_back.send(result).await;
+                    send_back.close_channel();
+                    id
+                }
+            }),
         }
     }
 }
